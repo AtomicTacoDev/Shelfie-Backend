@@ -1,0 +1,6 @@
+﻿services:
+  shelfie:
+    image: shelfie
+    build:
+      context: .
+      dockerfile: Shelfie/Dockerfile

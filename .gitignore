@@ -1,0 +1,53 @@
+# Build results
+bin/
+obj/
+out/
+
+# User-specific files
+*.user
+*.userosscache
+*.suo
+*.sln.docstates
+
+# Visual Studio / JetBrains Rider / IDE settings
+.vs/
+.idea/
+*.DotSettings
+
+# .NET Core / ASP.NET Core
+appsettings*.json
+appsettings.*.json
+launchSettings.json
+
+# Rider-specific
+.idea/
+
+# Logs
+*.log
+
+# Packages
+*.nupkg
+*.snupkg
+packages/
+
+# Docker
+docker-compose.override.yml
+Dockerfile
+.dockerignore
+
+# Publish output
+publish/
+
+# Misc
+*.DS_Store
+*.bak
+*.backup
+
+# Node/npm (if used)
+node_modules/
+
+# Coverage
+coverage/
+*.coverage
+*.coveragexml
+TestResults/
