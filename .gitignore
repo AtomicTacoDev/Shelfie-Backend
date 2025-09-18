@@ -51,3 +51,6 @@ coverage/
 *.coverage
 *.coveragexml
 TestResults/
+
+# Environment variables
+.env
