@@ -8,6 +8,8 @@ namespace Shelfie.Controllers;
 [Route("[controller]")]
 public class UserController(IUserService userService) : ControllerBase
 {
+    public record GoogleLoginRequest(string AuthCode);
+    
     [HttpGet("validateToken")]
     public IActionResult ValidateToken()
     {
@@ -23,9 +25,9 @@ public class UserController(IUserService userService) : ControllerBase
     }
     
     [HttpPost("googleLogin")]
-    public async Task<ActionResult<string>> GoogleLogin([FromBody] string authCode)
+    public async Task<ActionResult<string>> GoogleLogin([FromBody] GoogleLoginRequest request)
     {
-        var jwt = await userService.GoogleLogin(authCode);
+        var jwt = await userService.GoogleLogin(request.AuthCode);
         
         if (jwt == null) return BadRequest();
         
