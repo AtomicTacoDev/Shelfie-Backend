@@ -1,9 +1,11 @@
-using Microsoft.AspNetCore.Mvc;
+
+using Shelfie.Models;
 
 namespace Shelfie.Services;
 
 public interface IUserService
 {
-    public bool ValidateToken(string token);
+    public Task<User?> GetUser(string email);
     public Task<string?> GoogleLogin(string authCode);
+    public Task<bool> Register(string email, string username);
 }

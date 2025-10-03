@@ -1,38 +1,34 @@
+
 using System.IdentityModel.Tokens.Jwt;
 using System.Security.Claims;
 using System.Text;
-using Microsoft.AspNetCore.Mvc;
+using Microsoft.AspNetCore.Http.HttpResults;
+using Microsoft.AspNetCore.Identity;
 using Microsoft.IdentityModel.Tokens;
+using Shelfie.Models;
 
 namespace Shelfie.Services;
 
-public class UserService(IConfiguration config) : IUserService
+public class UserService(IConfiguration config, UserManager<User> userManager) : IUserService
 {
-    public bool ValidateToken(string token)
+    public async Task<User?> GetUser(string email)
     {
-        var tokenHandler = new JwtSecurityTokenHandler();
-        var key = Encoding.UTF8.GetBytes(config["Jwt:Key"] ?? throw new InvalidOperationException());
+        var user = await userManager.FindByEmailAsync(email);
 
-        try
-        {
-            tokenHandler.ValidateToken(token, new TokenValidationParameters
-            {
-                ValidateIssuerSigningKey = true,
-                IssuerSigningKey = new SymmetricSecurityKey(key),
-                ValidateIssuer = true,
-                ValidIssuer = config["Jwt:Issuer"],
-                ValidateAudience = true,
-                ValidAudience = config["Jwt:Audience"],
-                ValidateLifetime = true,
-                ClockSkew = TimeSpan.Zero
-            }, out _);
+        return user;
+    }
 
-            return true;
-        }
-        catch
+    public async Task<bool> Register(string email, string username)
+    {
+        var user = new User
         {
-            return false;
-        }
+            Email = email,
+            UserName = username
+        };
+
+        var result = await userManager.CreateAsync(user);
+
+        return result.Succeeded;
     }
     
     public async Task<string?> GoogleLogin(string authCode)
@@ -67,10 +63,9 @@ public class UserService(IConfiguration config) : IUserService
             userResponse.EnsureSuccessStatusCode();
             var userInfo = await userResponse.Content.ReadFromJsonAsync<Dictionary<string, object>>();
             
-            var userId = userInfo?["id"].ToString();
+            var email = userInfo?["email"].ToString();
+            var jwt = GenerateJwt(email);
             
-            var jwt = GenerateJwt(userId);
-
             return jwt;
         }
         catch
@@ -79,15 +74,15 @@ public class UserService(IConfiguration config) : IUserService
         }
     }
     
-    private string GenerateJwt(string userId)
+    private string GenerateJwt(string email)
     {
         var key = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(config["Jwt:Key"]));
         var credentials = new SigningCredentials(key, SecurityAlgorithms.HmacSha256);
 
         var claims = new[]
         {
-            new Claim(JwtRegisteredClaimNames.Sub, userId),
-            new Claim(JwtRegisteredClaimNames.Jti, Guid.NewGuid().ToString())
+            new Claim(JwtRegisteredClaimNames.Jti, Guid.NewGuid().ToString()),
+            new Claim(JwtRegisteredClaimNames.Email, email),
         };
 
         var token = new JwtSecurityToken(
