@@ -13,6 +13,7 @@ public partial class UserController(IUserService userService) : ControllerBase
 {
     public record GoogleLoginRequest(string AuthCode);
     public record RegisterRequest(string Username);
+    public record SignUpRequest(string Email, string Password);
     
     [GeneratedRegex("^[a-zA-Z0-9]+$")]
     private static partial Regex UsernameRegex();
@@ -35,9 +36,27 @@ public partial class UserController(IUserService userService) : ControllerBase
     {
         var jwt = await userService.GoogleLogin(request.AuthCode);
         
-        if (jwt == null) return BadRequest("Failed to exchange auth code.");
+        if (jwt == null)
+            return BadRequest("Failed to exchange auth code.");
         
         return Ok(jwt);
+    }
+
+    [HttpPost("signup")]
+    public ActionResult SignUp([FromBody] SignUpRequest request)
+    {
+        if (string.IsNullOrWhiteSpace(request.Email))
+            return BadRequest("Email must be provided.");
+        
+        if (string.IsNullOrWhiteSpace(request.Password))
+            return BadRequest("Password must be provided.");
+        
+        if (!IsValidEmail(request.Email))
+            return BadRequest("Invalid email address.");
+
+        
+        
+        return Ok();
     }
     
     [Authorize]
@@ -58,8 +77,53 @@ public partial class UserController(IUserService userService) : ControllerBase
         
         var success = await userService.Register(email, username);
         
-        if (!success) return BadRequest();
+        if (!success)
+            return BadRequest();
         
         return Ok(email);
+    }
+    
+    private static bool IsValidEmail(string email)
+    {
+        if (string.IsNullOrWhiteSpace(email))
+            return false;
+
+        try
+        {
+            // Normalize the domain
+            email = Regex.Replace(email, @"(@)(.+)$", DomainMapper,
+                RegexOptions.None, TimeSpan.FromMilliseconds(200));
+
+            // Examines the domain part of the email and normalizes it.
+            string DomainMapper(Match match)
+            {
+                // Use IdnMapping class to convert Unicode domain names.
+                var idn = new IdnMapping();
+
+                // Pull out and process domain name (throws ArgumentException on invalid)
+                string domainName = idn.GetAscii(match.Groups[2].Value);
+
+                return match.Groups[1].Value + domainName;
+            }
+        }
+        catch (RegexMatchTimeoutException e)
+        {
+            return false;
+        }
+        catch (ArgumentException e)
+        {
+            return false;
+        }
+
+        try
+        {
+            return Regex.IsMatch(email,
+                @"^[^@\s]+@[^@\s]+\.[^@\s]+$",
+                RegexOptions.IgnoreCase, TimeSpan.FromMilliseconds(250));
+        }
+        catch (RegexMatchTimeoutException)
+        {
+            return false;
+        }
     }
 }

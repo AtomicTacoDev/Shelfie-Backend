@@ -30,7 +30,12 @@ public class UserService(IConfiguration config, UserManager<User> userManager) :
 
         return result.Succeeded;
     }
-    
+
+    public Task SignUp(string email, string password)
+    {
+        throw new NotImplementedException();
+    }
+
     public async Task<string?> GoogleLogin(string authCode)
     {
         try
