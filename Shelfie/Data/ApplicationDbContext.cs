@@ -16,6 +16,6 @@ public class ApplicationDbContext : IdentityDbContext<User>
     {
         base.OnModelCreating(builder);
 
-        builder.HasDefaultSchema("auth");
+        builder.HasDefaultSchema("identity");
     }
 }
