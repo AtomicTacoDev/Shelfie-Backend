@@ -12,10 +12,16 @@ public class ApplicationDbContext : IdentityDbContext<User>
         
     }
     
+    public DbSet<Library> Libraries { get; set; } = null!;
+    public DbSet<PlacedObject> PlacedObjects { get; set; } = null!;
+    
     protected override void OnModelCreating(ModelBuilder builder)
     {
         base.OnModelCreating(builder);
 
         builder.HasDefaultSchema("identity");
+        
+        builder.Entity<Library>().ToTable("Libraries", schema: "app");
+        builder.Entity<PlacedObject>().ToTable("PlacedObjects", schema: "app");
     }
 }
