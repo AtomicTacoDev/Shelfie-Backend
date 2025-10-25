@@ -1,0 +1,8 @@
+api.shelfie3d.com {
+    reverse_proxy shelfie:8080
+    encode gzip
+    log {
+        output stdout
+        format console
+    }
+}
