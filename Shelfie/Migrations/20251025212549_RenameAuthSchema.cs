@@ -15,43 +15,43 @@ namespace Shelfie.Migrations
 
             migrationBuilder.RenameTable(
                 name: "AspNetUserTokens",
-                schema: "auth",
+                schema: "public",
                 newName: "AspNetUserTokens",
                 newSchema: "identity");
 
             migrationBuilder.RenameTable(
                 name: "AspNetUsers",
-                schema: "auth",
+                schema: "public",
                 newName: "AspNetUsers",
                 newSchema: "identity");
 
             migrationBuilder.RenameTable(
                 name: "AspNetUserRoles",
-                schema: "auth",
+                schema: "public",
                 newName: "AspNetUserRoles",
                 newSchema: "identity");
 
             migrationBuilder.RenameTable(
                 name: "AspNetUserLogins",
-                schema: "auth",
+                schema: "public",
                 newName: "AspNetUserLogins",
                 newSchema: "identity");
 
             migrationBuilder.RenameTable(
                 name: "AspNetUserClaims",
-                schema: "auth",
+                schema: "public",
                 newName: "AspNetUserClaims",
                 newSchema: "identity");
 
             migrationBuilder.RenameTable(
                 name: "AspNetRoles",
-                schema: "auth",
+                schema: "public",
                 newName: "AspNetRoles",
                 newSchema: "identity");
 
             migrationBuilder.RenameTable(
                 name: "AspNetRoleClaims",
-                schema: "auth",
+                schema: "public",
                 newName: "AspNetRoleClaims",
                 newSchema: "identity");
         }
@@ -60,49 +60,49 @@ namespace Shelfie.Migrations
         protected override void Down(MigrationBuilder migrationBuilder)
         {
             migrationBuilder.EnsureSchema(
-                name: "auth");
+                name: "identity");
 
             migrationBuilder.RenameTable(
                 name: "AspNetUserTokens",
-                schema: "identity",
+                schema: "public",
                 newName: "AspNetUserTokens",
-                newSchema: "auth");
+                newSchema: "identity");
 
             migrationBuilder.RenameTable(
                 name: "AspNetUsers",
-                schema: "identity",
+                schema: "public",
                 newName: "AspNetUsers",
-                newSchema: "auth");
+                newSchema: "identity");
 
             migrationBuilder.RenameTable(
                 name: "AspNetUserRoles",
-                schema: "identity",
+                schema: "public",
                 newName: "AspNetUserRoles",
-                newSchema: "auth");
+                newSchema: "identity");
 
             migrationBuilder.RenameTable(
                 name: "AspNetUserLogins",
-                schema: "identity",
+                schema: "public",
                 newName: "AspNetUserLogins",
-                newSchema: "auth");
+                newSchema: "identity");
 
             migrationBuilder.RenameTable(
                 name: "AspNetUserClaims",
-                schema: "identity",
+                schema: "public",
                 newName: "AspNetUserClaims",
-                newSchema: "auth");
+                newSchema: "identity");
 
             migrationBuilder.RenameTable(
                 name: "AspNetRoles",
-                schema: "identity",
+                schema: "public",
                 newName: "AspNetRoles",
-                newSchema: "auth");
+                newSchema: "identity");
 
             migrationBuilder.RenameTable(
                 name: "AspNetRoleClaims",
-                schema: "identity",
+                schema: "public",
                 newName: "AspNetRoleClaims",
-                newSchema: "auth");
+                newSchema: "identity");
         }
     }
 }
