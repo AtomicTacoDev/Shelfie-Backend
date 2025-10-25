@@ -3,8 +3,8 @@
 services:
   shelfie:
     build:
-      context: .
-      dockerfile: Shelfie/Dockerfile
+      context: ./Shelfie
+      dockerfile: Dockerfile
     container_name: shelfie
     restart: unless-stopped
     env_file:
