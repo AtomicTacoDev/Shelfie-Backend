@@ -15,8 +15,7 @@ out/
 *.DotSettings
 
 # .NET Core / ASP.NET Core
-appsettings*.json
-appsettings.*.json
+appsettings.Development.json
 launchSettings.json
 
 # Rider-specific

@@ -10,7 +10,8 @@ using Shelfie.Services;
 
 var builder = WebApplication.CreateBuilder(args);
 
-var connectionString = builder.Configuration.GetConnectionString("DefaultConnection");
+var connectionString = Environment.GetEnvironmentVariable("DATABASE_URL")
+    ?? builder.Configuration.GetConnectionString("DefaultConnection");
 
 builder.Services.AddDbContext<ApplicationDbContext>(options =>
     options.UseNpgsql(connectionString));
@@ -47,6 +48,13 @@ builder.Services.AddCors(options =>
         });
 });
 
+var jwtKey = Environment.GetEnvironmentVariable("JWT_KEY") 
+    ?? builder.Configuration["Jwt:Key"];
+var jwtIssuer = Environment.GetEnvironmentVariable("JWT_ISSUER") 
+    ?? builder.Configuration["Jwt:Issuer"];
+var jwtAudience = Environment.GetEnvironmentVariable("JWT_AUDIENCE") 
+    ?? builder.Configuration["Jwt:Audience"];
+
 builder.Services.AddAuthentication(options =>
     {
         options.DefaultAuthenticateScheme = JwtBearerDefaults.AuthenticationScheme;
@@ -57,11 +65,11 @@ builder.Services.AddAuthentication(options =>
         options.TokenValidationParameters = new TokenValidationParameters
         {
             ValidateIssuer = true,
-            ValidIssuer = builder.Configuration["Jwt:Issuer"],
+            ValidIssuer = jwtIssuer,
             ValidateAudience = true,
-            ValidAudience = builder.Configuration["Jwt:Audience"],
+            ValidAudience = jwtAudience,
             ValidateIssuerSigningKey = true,
-            IssuerSigningKey = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(builder.Configuration["Jwt:Key"])),
+            IssuerSigningKey = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(jwtKey)),
             ValidateLifetime = true,
             ClockSkew = TimeSpan.Zero
         };
@@ -84,5 +92,11 @@ app.UseAuthentication();
 app.UseAuthorization();
 
 app.MapControllers();
+
+using (var scope = app.Services.CreateScope())
+{
+    var db = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+    db.Database.Migrate();
+}
 
 app.Run();
