@@ -24,6 +24,7 @@ builder.Services.AddIdentity<User, IdentityRole>(options =>
     .AddDefaultTokenProviders();
 
 builder.Services.AddScoped<IUserService, UserService>();
+builder.Services.AddScoped<ILibraryService, LibraryService>();
 
 // Add services to the container.
 

@@ -24,7 +24,7 @@ public partial class UserController(IUserService userService) : ControllerBase
     {
         var email = User.FindFirst(c => c.Type == System.Security.Claims.ClaimTypes.Email)!.Value;
 
-        var user = await userService.GetUser(email);
+        var user = await userService.GetUserByEmail(email);
         if (user == null || string.IsNullOrEmpty(user.UserName))
             return NotFound();
 

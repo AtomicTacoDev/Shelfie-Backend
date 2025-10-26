@@ -5,15 +5,23 @@ using System.Text;
 using Microsoft.AspNetCore.Http.HttpResults;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.IdentityModel.Tokens;
+using Shelfie.Data;
 using Shelfie.Models;
 
 namespace Shelfie.Services;
 
-public class UserService(IConfiguration config, UserManager<User> userManager) : IUserService
+public class UserService(IConfiguration config, UserManager<User> userManager, ApplicationDbContext dbContext) : IUserService
 {
-    public async Task<User?> GetUser(string email)
+    public async Task<User?> GetUserByEmail(string email)
     {
         var user = await userManager.FindByEmailAsync(email);
+
+        return user;
+    }
+    
+    public async Task<User?> GetUserByName(string userName)
+    {
+        var user = await userManager.FindByNameAsync(userName);
 
         return user;
     }
@@ -27,8 +35,19 @@ public class UserService(IConfiguration config, UserManager<User> userManager) :
         };
 
         var result = await userManager.CreateAsync(user);
+        
+        if (!result.Succeeded) return false;
+        
+        var library = new Library
+        {
+            UserId = user.Id,
+            Objects = new List<PlacedObject>()
+        };
 
-        return result.Succeeded;
+        dbContext.Libraries.Add(library);
+        await dbContext.SaveChangesAsync();
+
+        return true;
     }
 
     public Task SignUp(string email, string password)
