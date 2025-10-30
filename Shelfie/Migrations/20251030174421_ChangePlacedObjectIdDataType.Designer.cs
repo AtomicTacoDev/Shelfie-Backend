@@ -2,6 +2,7 @@
 using System;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 using Shelfie.Data;
@@ -11,9 +12,11 @@ using Shelfie.Data;
 namespace Shelfie.Migrations
 {
     [DbContext(typeof(ApplicationDbContext))]
-    partial class ApplicationDbContextModelSnapshot : ModelSnapshot
+    [Migration("20251030174421_ChangePlacedObjectIdDataType")]
+    partial class ChangePlacedObjectIdDataType
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder
@@ -193,9 +196,6 @@ namespace Shelfie.Migrations
                         .HasColumnType("real");
 
                     b.Property<float>("PositionY")
-                        .HasColumnType("real");
-
-                    b.Property<float>("PositionZ")
                         .HasColumnType("real");
 
                     b.Property<float>("Rotation")

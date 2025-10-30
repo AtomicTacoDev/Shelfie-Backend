@@ -21,9 +21,11 @@ public partial class UserController(IUserService userService) : ControllerBase
     
     [Authorize]
     [HttpGet("me")]
-    public async Task<ActionResult<UserDto>> GetUserByEmail()
+    public async Task<ActionResult<UserDto>> Me()
     {
+        Console.WriteLine("Hit /user/me");
         var email = User.FindFirst(c => c.Type == System.Security.Claims.ClaimTypes.Email)!.Value;
+        Console.WriteLine($"JWT Email claim: {email}");
 
         var user = await userService.GetUserByEmail(email);
         if (user == null || string.IsNullOrEmpty(user.UserName))
