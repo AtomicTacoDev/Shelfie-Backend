@@ -11,7 +11,7 @@ namespace Shelfie.Controllers;
 public partial class LibraryController(IUserService userService, ILibraryService libraryService) : ControllerBase
 {
     [HttpGet("{userName}")]
-    public async Task<ActionResult> GetLibraryData(string userName)
+    public async Task<ActionResult<LibraryDto>> GetLibraryData(string userName)
     {
         var user = await userService.GetUserByName(userName);
         if (user == null || string.IsNullOrEmpty(user.UserName))
@@ -19,19 +19,6 @@ public partial class LibraryController(IUserService userService, ILibraryService
         
         var library = await libraryService.GetLibraryData(user.Id);
 
-        var libraryDto = new LibraryDto
-        {
-            Id = library.Id,
-            UserName = user.UserName,
-            Objects = library.Objects.Select(obj => new PlacedObjectDto
-            {
-                ObjectId = obj.Id,
-                PositionX = obj.PositionX,
-                PositionY = obj.PositionY,
-                Rotation = obj.Rotation
-            }).ToList()
-        };
-
-        return Ok(libraryDto);
+        return Ok(library);
     }
 }

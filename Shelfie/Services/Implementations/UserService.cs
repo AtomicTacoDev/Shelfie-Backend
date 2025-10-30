@@ -7,26 +7,27 @@ using Microsoft.AspNetCore.Identity;
 using Microsoft.IdentityModel.Tokens;
 using Shelfie.Data;
 using Shelfie.Models;
+using Shelfie.Models.Dto;
 
 namespace Shelfie.Services;
 
 public class UserService(IConfiguration config, UserManager<User> userManager, ApplicationDbContext dbContext) : IUserService
 {
-    public async Task<User?> GetUserByEmail(string email)
+    public async Task<UserDto?> GetUserByEmail(string email)
     {
-        var user = await userManager.FindByEmailAsync(email);
-
-        return user;
+        var identityUser = await userManager.FindByEmailAsync(email);
+        
+        return identityUser is null ? null : new UserDto(identityUser.UserName, identityUser.Email);
     }
     
-    public async Task<User?> GetUserByName(string userName)
+    public async Task<UserDto?> GetUserByName(string userName)
     {
-        var user = await userManager.FindByNameAsync(userName);
+        var identityUser = await userManager.FindByNameAsync(userName);
 
-        return user;
+        return identityUser is null ? null : new UserDto(identityUser.UserName, identityUser.Email);
     }
 
-    public async Task<bool> Register(string email, string username)
+    /*public async Task<bool> Register(string email, string username)
     {
         var user = new User
         {
@@ -53,9 +54,9 @@ public class UserService(IConfiguration config, UserManager<User> userManager, A
     public Task SignUp(string email, string password)
     {
         throw new NotImplementedException();
-    }
+    }*/
 
-    public async Task<string?> GoogleLogin(string authCode)
+    public async Task<AuthResponseDto?> GoogleLogin(string authCode)
     {
         try
         {
@@ -90,7 +91,7 @@ public class UserService(IConfiguration config, UserManager<User> userManager, A
             var email = userInfo?["email"].ToString();
             var jwt = GenerateJwt(email);
             
-            return jwt;
+            return new AuthResponseDto(jwt);
         }
         catch
         {

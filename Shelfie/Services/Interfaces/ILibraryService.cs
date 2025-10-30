@@ -1,9 +1,10 @@
 
 using Shelfie.Models;
+using Shelfie.Models.Dto;
 
 namespace Shelfie.Services;
 
 public interface ILibraryService
 {
-    public Task<Library> GetLibraryData(string userId);
+    public Task<LibraryDto> GetLibraryData(string userId);
 }

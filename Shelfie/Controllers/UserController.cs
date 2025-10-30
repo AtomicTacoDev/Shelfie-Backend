@@ -3,6 +3,7 @@ using System.Globalization;
 using System.Text.RegularExpressions;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using Shelfie.Models.Dto;
 using Shelfie.Services;
 
 namespace Shelfie.Controllers;
@@ -20,7 +21,7 @@ public partial class UserController(IUserService userService) : ControllerBase
     
     [Authorize]
     [HttpGet("me")]
-    public async Task<ActionResult> GetUserInfo()
+    public async Task<ActionResult<UserDto>> GetUserByEmail()
     {
         var email = User.FindFirst(c => c.Type == System.Security.Claims.ClaimTypes.Email)!.Value;
 
@@ -28,11 +29,11 @@ public partial class UserController(IUserService userService) : ControllerBase
         if (user == null || string.IsNullOrEmpty(user.UserName))
             return NotFound();
 
-        return Ok(new { username = user.UserName, email });
+        return Ok(user);
     }
     
     [HttpPost("googleLogin")]
-    public async Task<ActionResult> GoogleLogin([FromBody] GoogleLoginRequest request)
+    public async Task<ActionResult<AuthResponseDto>> GoogleLogin([FromBody] GoogleLoginRequest request)
     {
         var jwt = await userService.GoogleLogin(request.AuthCode);
         
@@ -43,7 +44,7 @@ public partial class UserController(IUserService userService) : ControllerBase
     }
 
     [HttpPost("signup")]
-    public ActionResult SignUp([FromBody] SignUpRequest request)
+    public async Task<ActionResult> SignUp([FromBody] SignUpRequest request)
     {
         if (string.IsNullOrWhiteSpace(request.Email))
             return BadRequest("Email must be provided.");
@@ -54,9 +55,7 @@ public partial class UserController(IUserService userService) : ControllerBase
         if (!IsValidEmail(request.Email))
             return BadRequest("Invalid email address.");
 
-        
-        
-        return Ok();
+        throw new NotImplementedException();
     }
     
     [Authorize]
@@ -75,12 +74,7 @@ public partial class UserController(IUserService userService) : ControllerBase
         if (!UsernameRegex().IsMatch(username))
             return BadRequest("Username can only contain letters and numbers.");
         
-        var success = await userService.Register(email, username);
-        
-        if (!success)
-            return BadRequest();
-        
-        return Ok(email);
+        throw new NotImplementedException();
     }
     
     private static bool IsValidEmail(string email)
