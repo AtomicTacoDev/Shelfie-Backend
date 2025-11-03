@@ -31,29 +31,31 @@ public class LibraryService(ApplicationDbContext dbContext) : ILibraryService
 
         throw new NotImplementedException();
     }
+    
+    public async Task<IReadOnlyList<PlacedObjectDto>> GetObjects(string userName)
+    {
+        var library = await GetLibrary(userName);
 
+        return library.Objects
+            .Select(obj => new PlacedObjectDto(
+                obj.Id,
+                obj.ObjectTypeId,
+                new PositionDto(obj.PositionX, obj.PositionY, obj.PositionZ),
+                obj.Rotation
+            ))
+            .ToList();
+    }
+    
     public async Task<PlacedObjectDto?> TryPlaceObject(
         string userName,
         string objectTypeId,
         PositionDto position,
         float rotation)
     {
-        var library = await dbContext.Libraries
-            .Include(l => l.Objects)
-            .Include(l => l.User)
-            .FirstOrDefaultAsync(l => l.User.UserName == userName);
-        
-        var size = new Vector3(0.5f, 0.5f, 0.5f); // TODO: get by objectTypeId
-        
-        foreach (var obj in library.Objects)
-        {
-            var objSize = new Vector3(0.5f, 0.5f, 0.5f); // TODO: get by objectTypeId
-            var objPos = new Vector3(obj.PositionX, obj.PositionY, obj.PositionZ);
-            var objRot = obj.Rotation;
+        var library = await GetLibrary(userName);
 
-            if (WouldCollide(ToVector3(position), size, rotation, objPos, objSize, objRot))
-                return null;
-        }
+        if (IsPositionOccupied(library, position, rotation))
+            return null;
         
         var newObject = new PlacedObject
         {
@@ -75,24 +77,57 @@ public class LibraryService(ApplicationDbContext dbContext) : ILibraryService
             rotation
         );
     }
+
+    public async Task<PlacedObjectDto?> TryMoveObject(
+        string userName,
+        int objectId,
+        string objectTypeId,
+        PositionDto position,
+        float rotation)
+    {
+        var library = await GetLibrary(userName);
+        
+        if (IsPositionOccupied(library, position, rotation))
+            return null;
+
+        var objectToMove = await dbContext.PlacedObjects.FindAsync(objectId);
+        objectToMove.PositionX = position.x;
+        objectToMove.PositionY = position.y;
+        objectToMove.PositionZ = position.z;
+        objectToMove.Rotation = rotation;
+        await dbContext.SaveChangesAsync();
+
+        return new PlacedObjectDto(
+            objectId,
+            objectTypeId,
+            position,
+            rotation
+        );
+    }
+    
+    /* Helpers */
+    public async Task<Library?> GetLibrary(string userName) => await dbContext.Libraries
+        .Include(l => l.Objects)
+        .Include(l => l.User)
+        .FirstOrDefaultAsync(l => l.User.UserName == userName);
     
     public static Vector3 ToVector3(PositionDto pos) => new Vector3(pos.x, pos.y, pos.z);
-    
-    public async Task<IReadOnlyList<PlacedObjectDto>?> GetObjects(string userName)
-    {
-        var library = await dbContext.Libraries
-            .Include(l => l.Objects)
-            .Include(l => l.User)
-            .FirstOrDefaultAsync(l => l.User.UserName == userName);
 
-        return library.Objects
-            .Select(obj => new PlacedObjectDto(
-                obj.Id,
-                obj.ObjectTypeId,
-                new PositionDto(obj.PositionX, obj.PositionY, obj.PositionZ),
-                obj.Rotation
-            ))
-            .ToList();
+    private static bool IsPositionOccupied(Library library, PositionDto position, float rotation)
+    {
+        var size = new Vector3(0.5f, 0.5f, 0.5f); // TODO: get by objectTypeId
+        
+        foreach (var obj in library.Objects)
+        {
+            var objSize = new Vector3(0.5f, 0.5f, 0.5f); // TODO: get by objectTypeId
+            var objPos = new Vector3(obj.PositionX, obj.PositionY, obj.PositionZ);
+            var objRot = obj.Rotation;
+
+            if (WouldCollide(ToVector3(position), size, rotation, objPos, objSize, objRot))
+                return true;
+        }
+
+        return false;
     }
     
     private static bool WouldCollide(
