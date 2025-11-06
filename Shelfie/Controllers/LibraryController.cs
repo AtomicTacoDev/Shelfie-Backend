@@ -44,11 +44,9 @@ public partial class LibraryController(IUserService userService, ILibraryService
         return Created($"/library/{userName}/objects/{newObject.Id}", newObject); // temporary solution
     }
     
-    [HttpPut("{userName}/objects/{objectId}")]
+    [HttpPatch("{userName}/objects/{objectId}")]
     public async Task<ActionResult<PlacedObjectDto>> MoveObject(string userName, int objectId, [FromBody] MoveObjectRequest request)
     {
-        Console.WriteLine(objectId);
-        
         var objects = await libraryService.GetObjects(userName);
         
         if (objects.Count == 0)
@@ -65,5 +63,11 @@ public partial class LibraryController(IUserService userService, ILibraryService
             request.Rotation);
         
         return Ok(movedObject);
+    }
+
+    [HttpDelete("{userName}/objects/{objectId}")]
+    public async Task<IActionResult> DeleteObject(string userName, int objectId)
+    {
+        throw new NotImplementedException();
     }
 }

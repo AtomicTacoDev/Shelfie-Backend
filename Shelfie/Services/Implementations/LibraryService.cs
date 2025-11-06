@@ -104,6 +104,11 @@ public class LibraryService(ApplicationDbContext dbContext) : ILibraryService
             rotation
         );
     }
+
+    public Task DeleteObject(string userName, int objectId)
+    {
+        throw new NotImplementedException();
+    }
     
     /* Helpers */
     public async Task<Library?> GetLibrary(string userName) => await dbContext.Libraries
