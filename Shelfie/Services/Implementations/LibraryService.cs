@@ -52,10 +52,16 @@ public class LibraryService(ApplicationDbContext dbContext) : ILibraryService
         PositionDto position,
         float rotation)
     {
+        await using var transaction = await dbContext.Database.BeginTransactionAsync(
+            System.Data.IsolationLevel.Serializable);
+        
         var library = await GetLibrary(userName);
 
-        if (IsPositionOccupied(library, position, rotation))
+        if (IsPositionOccupied(library, position, rotation, -1))
+        {
+            await transaction.RollbackAsync();
             return null;
+        }
         
         var newObject = new PlacedObject
         {
@@ -69,6 +75,8 @@ public class LibraryService(ApplicationDbContext dbContext) : ILibraryService
 
         dbContext.PlacedObjects.Add(newObject);
         await dbContext.SaveChangesAsync();
+        
+        await transaction.CommitAsync();
         
         return new PlacedObjectDto(
             newObject.Id,
@@ -85,17 +93,40 @@ public class LibraryService(ApplicationDbContext dbContext) : ILibraryService
         PositionDto position,
         float rotation)
     {
-        var library = await GetLibrary(userName);
-        
-        if (IsPositionOccupied(library, position, rotation))
-            return null;
-
         var objectToMove = await dbContext.PlacedObjects.FindAsync(objectId);
+    
+        if (objectToMove == null)
+            return null;
+        
+        var library = await GetLibrary(userName);
+    
+        if (IsPositionOccupied(library, position, rotation, objectId))
+            return null;
+    
         objectToMove.PositionX = position.x;
         objectToMove.PositionY = position.y;
         objectToMove.PositionZ = position.z;
         objectToMove.Rotation = rotation;
-        await dbContext.SaveChangesAsync();
+    
+        try
+        {
+            await dbContext.SaveChangesAsync();
+        }
+        catch (DbUpdateConcurrencyException)
+        {
+            var exists = await dbContext.PlacedObjects.AnyAsync(o => o.Id == objectId);
+            if (!exists)
+            {
+                return null;
+            }
+            
+            await dbContext.Entry(objectToMove).ReloadAsync();
+            objectToMove.PositionX = position.x;
+            objectToMove.PositionY = position.y;
+            objectToMove.PositionZ = position.z;
+            objectToMove.Rotation = rotation;
+            await dbContext.SaveChangesAsync();
+        }
 
         return new PlacedObjectDto(
             objectId,
@@ -105,9 +136,25 @@ public class LibraryService(ApplicationDbContext dbContext) : ILibraryService
         );
     }
 
-    public Task DeleteObject(string userName, int objectId)
+    public async Task DeleteObject(int objectId)
     {
-        throw new NotImplementedException();
+        var objectToDelete = await dbContext.PlacedObjects.FindAsync(objectId);
+        
+        if (objectToDelete == null)
+        {
+            return;
+        }
+        
+        dbContext.PlacedObjects.Remove(objectToDelete);
+        
+        try 
+        {
+            await dbContext.SaveChangesAsync();
+        }
+        catch (DbUpdateConcurrencyException)
+        {
+            await dbContext.Entry(objectToDelete).ReloadAsync();
+        }
     }
     
     /* Helpers */
@@ -118,12 +165,15 @@ public class LibraryService(ApplicationDbContext dbContext) : ILibraryService
     
     public static Vector3 ToVector3(PositionDto pos) => new Vector3(pos.x, pos.y, pos.z);
 
-    private static bool IsPositionOccupied(Library library, PositionDto position, float rotation)
+    private static bool IsPositionOccupied(Library library, PositionDto position, float rotation, int excludeObjectId)
     {
         var size = new Vector3(0.5f, 0.5f, 0.5f); // TODO: get by objectTypeId
         
         foreach (var obj in library.Objects)
         {
+            if (obj.Id == excludeObjectId)
+                continue;
+            
             var objSize = new Vector3(0.5f, 0.5f, 0.5f); // TODO: get by objectTypeId
             var objPos = new Vector3(obj.PositionX, obj.PositionY, obj.PositionZ);
             var objRot = obj.Rotation;

@@ -1,6 +1,7 @@
-using System.Numerics;
+
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.EntityFrameworkCore;
 using Shelfie.Models.Dto;
 using Shelfie.Services;
 
@@ -62,12 +63,26 @@ public partial class LibraryController(IUserService userService, ILibraryService
             request.Position,
             request.Rotation);
         
+        if (movedObject is null)
+            return BadRequest(new { message = "Cannot move object to this position" });
+        
         return Ok(movedObject);
     }
 
     [HttpDelete("{userName}/objects/{objectId}")]
     public async Task<IActionResult> DeleteObject(string userName, int objectId)
     {
-        throw new NotImplementedException();
+        var objects = await libraryService.GetObjects(userName);
+    
+        if (objects.Count == 0)
+            return NotFound(new { message = "No objects in library" });
+    
+        var objectToDelete = objects.FirstOrDefault(obj => obj.Id == objectId);
+        if (objectToDelete == null)
+            return NotFound(new { message = "Object not found" });
+    
+        await libraryService.DeleteObject(objectId);
+        
+        return NoContent();
     }
 }
