@@ -1,6 +1,6 @@
-
 using System.Numerics;
 using Microsoft.EntityFrameworkCore;
+using Npgsql;
 using Shelfie.Data;
 using Shelfie.Models;
 using Shelfie.Models.Dto;
@@ -9,29 +9,13 @@ namespace Shelfie.Services;
 
 public class LibraryService(ApplicationDbContext dbContext) : ILibraryService
 {
+    private const int MaxRetries = 3;
+    
     public async Task<LibraryDto> GetLibraryData(string userId)
     {
-        /*var library = await dbContext.Libraries
-            .Include(l => l.User)
-            .Include(l => l.Objects)
-            .FirstOrDefaultAsync(l => l.UserId == userId);
-        
-        var libraryDto = new LibraryDto (
-            library.Id,
-            library.User.UserName,
-            library.Objects.Select(obj => new PlacedObjectDto (
-                obj.Id,
-                obj.PositionX,
-                obj.PositionY,
-                obj.Rotation
-            )).ToList()
-        );
-
-        return libraryDto;*/
-
         throw new NotImplementedException();
     }
-    
+
     public async Task<IReadOnlyList<PlacedObjectDto>> GetObjects(string userName)
     {
         var library = await GetLibrary(userName);
@@ -52,38 +36,44 @@ public class LibraryService(ApplicationDbContext dbContext) : ILibraryService
         PositionDto position,
         float rotation)
     {
-        await using var transaction = await dbContext.Database.BeginTransactionAsync(
-            System.Data.IsolationLevel.Serializable);
-        
-        var library = await GetLibrary(userName);
-
-        if (IsPositionOccupied(library, position, rotation, -1))
+        for (var attempt = 1; attempt <= MaxRetries; attempt++)
         {
-            await transaction.RollbackAsync();
-            return null;
+            await using var transaction = await dbContext.Database.BeginTransactionAsync(System.Data.IsolationLevel.Serializable);
+
+            try
+            {
+                var library = await GetLibrary(userName);
+
+                if (IsPositionOccupied(library, position, rotation, -1))
+                {
+                    await transaction.RollbackAsync();
+                    return null;
+                }
+
+                var newObject = new PlacedObject
+                {
+                    ObjectTypeId = objectTypeId,
+                    PositionX = position.x,
+                    PositionY = position.y,
+                    PositionZ = position.z,
+                    Rotation = rotation,
+                    LibraryId = library.Id
+                };
+
+                dbContext.PlacedObjects.Add(newObject);
+                await dbContext.SaveChangesAsync();
+
+                await transaction.CommitAsync();
+
+                return new PlacedObjectDto(newObject.Id, objectTypeId, position, rotation);
+            }
+            catch (PostgresException ex) when (ex.SqlState == "40001")
+            {
+                if (attempt == MaxRetries) throw;
+            }
         }
-        
-        var newObject = new PlacedObject
-        {
-            ObjectTypeId = objectTypeId,
-            PositionX = position.x,
-            PositionY = position.y,
-            PositionZ = position.z,
-            Rotation = rotation,
-            LibraryId = library.Id
-        };
 
-        dbContext.PlacedObjects.Add(newObject);
-        await dbContext.SaveChangesAsync();
-        
-        await transaction.CommitAsync();
-        
-        return new PlacedObjectDto(
-            newObject.Id,
-            objectTypeId,
-            position,
-            rotation
-        );
+        return null;
     }
 
     public async Task<PlacedObjectDto?> TryMoveObject(
@@ -93,169 +83,145 @@ public class LibraryService(ApplicationDbContext dbContext) : ILibraryService
         PositionDto position,
         float rotation)
     {
-        var objectToMove = await dbContext.PlacedObjects.FindAsync(objectId);
-    
-        if (objectToMove == null)
-            return null;
-        
-        var library = await GetLibrary(userName);
-    
-        if (IsPositionOccupied(library, position, rotation, objectId))
-            return null;
-    
-        objectToMove.PositionX = position.x;
-        objectToMove.PositionY = position.y;
-        objectToMove.PositionZ = position.z;
-        objectToMove.Rotation = rotation;
-    
-        try
+        for (var attempt = 1; attempt <= MaxRetries; attempt++)
         {
-            await dbContext.SaveChangesAsync();
-        }
-        catch (DbUpdateConcurrencyException)
-        {
-            var exists = await dbContext.PlacedObjects.AnyAsync(o => o.Id == objectId);
-            if (!exists)
+            try
             {
-                return null;
+                var objectToMove = await dbContext.PlacedObjects.FindAsync(objectId);
+                if (objectToMove == null) return null;
+
+                var library = await GetLibrary(userName);
+                if (IsPositionOccupied(library, position, rotation, objectId)) return null;
+
+                objectToMove.PositionX = position.x;
+                objectToMove.PositionY = position.y;
+                objectToMove.PositionZ = position.z;
+                objectToMove.Rotation = rotation;
+
+                await dbContext.SaveChangesAsync();
+
+                return new PlacedObjectDto(objectId, objectTypeId, position, rotation);
             }
-            
-            await dbContext.Entry(objectToMove).ReloadAsync();
-            objectToMove.PositionX = position.x;
-            objectToMove.PositionY = position.y;
-            objectToMove.PositionZ = position.z;
-            objectToMove.Rotation = rotation;
-            await dbContext.SaveChangesAsync();
+            catch (DbUpdateConcurrencyException)
+            {
+                var exists = await dbContext.PlacedObjects.AnyAsync(o => o.Id == objectId);
+                if (!exists) return null;
+
+                await dbContext.Entry(await dbContext.PlacedObjects.FindAsync(objectId)!).ReloadAsync();
+            }
+            catch (PostgresException ex) when (ex.SqlState == "40001")
+            {
+                if (attempt == MaxRetries) throw;
+            }
         }
 
-        return new PlacedObjectDto(
-            objectId,
-            objectTypeId,
-            position,
-            rotation
-        );
+        return null;
     }
 
     public async Task DeleteObject(int objectId)
     {
-        var objectToDelete = await dbContext.PlacedObjects.FindAsync(objectId);
-        
-        if (objectToDelete == null)
+        for (var attempt = 1; attempt <= MaxRetries; attempt++)
         {
-            return;
-        }
-        
-        dbContext.PlacedObjects.Remove(objectToDelete);
-        
-        try 
-        {
-            await dbContext.SaveChangesAsync();
-        }
-        catch (DbUpdateConcurrencyException)
-        {
-            await dbContext.Entry(objectToDelete).ReloadAsync();
+            try
+            {
+                var objectToDelete = await dbContext.PlacedObjects.FindAsync(objectId);
+                if (objectToDelete == null) return;
+
+                dbContext.PlacedObjects.Remove(objectToDelete);
+                await dbContext.SaveChangesAsync();
+                return;
+            }
+            catch (DbUpdateConcurrencyException)
+            {
+                var objectToReload = await dbContext.PlacedObjects.FindAsync(objectId);
+                if (objectToReload != null) await dbContext.Entry(objectToReload).ReloadAsync();
+            }
+            catch (PostgresException ex) when (ex.SqlState == "40001")
+            {
+                if (attempt == MaxRetries) throw;
+            }
         }
     }
     
-    /* Helpers */
     public async Task<Library?> GetLibrary(string userName) => await dbContext.Libraries
         .Include(l => l.Objects)
         .Include(l => l.User)
         .FirstOrDefaultAsync(l => l.User.UserName == userName);
-    
-    public static Vector3 ToVector3(PositionDto pos) => new Vector3(pos.x, pos.y, pos.z);
+
+    private static Vector3 ToVector3(PositionDto pos) => new Vector3(pos.x, pos.y, pos.z);
 
     private static bool IsPositionOccupied(Library library, PositionDto position, float rotation, int excludeObjectId)
     {
         var size = new Vector3(0.5f, 0.5f, 0.5f); // TODO: get by objectTypeId
-        
+
         foreach (var obj in library.Objects)
         {
-            if (obj.Id == excludeObjectId)
-                continue;
-            
+            if (obj.Id == excludeObjectId) continue;
+
             var objSize = new Vector3(0.5f, 0.5f, 0.5f); // TODO: get by objectTypeId
             var objPos = new Vector3(obj.PositionX, obj.PositionY, obj.PositionZ);
-            var objRot = obj.Rotation;
 
-            if (WouldCollide(ToVector3(position), size, rotation, objPos, objSize, objRot))
+            if (CheckObbIntersection(ToVector3(position), size, rotation, objPos, objSize, obj.Rotation))
                 return true;
         }
 
         return false;
     }
-    
-    private static bool WouldCollide(
-        Vector3 pos1, Vector3 size1, float rot1,
-        Vector3 pos2, Vector3 size2, float rot2)
+
+    private static bool CheckObbIntersection(Vector3 pos1, Vector3 size1, float rot1, Vector3 pos2, Vector3 size2, float rot2)
     {
-        var corners1 = GetRotatedCorners(pos1, size1, rot1);
-        var corners2 = GetRotatedCorners(pos2, size2, rot2);
+        var quat1 = Quaternion.CreateFromAxisAngle(Vector3.UnitY, rot1);
+        var quat2 = Quaternion.CreateFromAxisAngle(Vector3.UnitY, rot2);
 
-        var axes = new List<Vector2>();
-        
-        AddAxes(corners1, axes);
-        AddAxes(corners2, axes);
+        var axes1 = GetRotationAxes(quat1);
+        var axes2 = GetRotationAxes(quat2);
 
-        foreach (var axis in axes)
-        {
-            var len = axis.Length();
-            if (len == 0) continue;
-            var normalized = axis / len;
+        var halfSize1 = size1 * 0.5f;
+        var halfSize2 = size2 * 0.5f;
 
-            var (min1, max1) = ProjectOntoAxis(corners1, normalized);
-            var (min2, max2) = ProjectOntoAxis(corners2, normalized);
+        var centerDiff = pos2 - pos1;
 
-            if (max1 < min2 || max2 < min1)
-                return false;
-        }
+        for (var i = 0; i < 3; i++)
+            if (TestAxis(axes1[i], centerDiff, halfSize1, halfSize2, axes1, axes2)) return false;
+
+        for (var i = 0; i < 3; i++)
+            if (TestAxis(axes2[i], centerDiff, halfSize1, halfSize2, axes1, axes2)) return false;
+
+        for (var i = 0; i < 3; i++)
+            for (var j = 0; j < 3; j++)
+            {
+                var axis = Vector3.Cross(axes1[i], axes2[j]);
+                if (axis.LengthSquared() < 0.0001f) continue;
+
+                axis = Vector3.Normalize(axis);
+                if (TestAxis(axis, centerDiff, halfSize1, halfSize2, axes1, axes2)) return false;
+            }
 
         return true;
     }
 
-    private static void AddAxes(Vector2[] corners, List<Vector2> axes)
-    {
-        for (int i = 0; i < 4; i++)
+    private static Vector3[] GetRotationAxes(Quaternion quat) =>
+        new[]
         {
-            var j = (i + 1) % 4;
-            var edge = corners[j] - corners[i];
-            axes.Add(new Vector2(-edge.Y, edge.X));
-        }
-    }
-
-    private static Vector2[] GetRotatedCorners(Vector3 pos, Vector3 size, float rotDeg)
-    {
-        float halfW = size.X / 2;
-        float halfD = size.Z / 2;
-
-        var corners = new[]
-        {
-            new Vector2(-halfW, -halfD),
-            new Vector2( halfW, -halfD),
-            new Vector2( halfW,  halfD),
-            new Vector2(-halfW,  halfD)
+            Vector3.Transform(Vector3.UnitX, quat),
+            Vector3.Transform(Vector3.UnitY, quat),
+            Vector3.Transform(Vector3.UnitZ, quat)
         };
 
-        float rad = MathF.PI / 180f * rotDeg;
-        float cos = MathF.Cos(rad);
-        float sin = MathF.Sin(rad);
-
-        for (int i = 0; i < corners.Length; i++)
-        {
-            var x = corners[i].X;
-            var z = corners[i].Y;
-            var rx = x * cos - z * sin;
-            var rz = x * sin + z * cos;
-            corners[i] = new Vector2(pos.X + rx, pos.Z + rz);
-        }
-
-        return corners;
-    }
-
-    private static (float min, float max) ProjectOntoAxis(Vector2[] corners, Vector2 axis)
+    private static bool TestAxis(Vector3 axis, Vector3 centerDiff, Vector3 halfSize1, Vector3 halfSize2, Vector3[] axes1, Vector3[] axes2)
     {
-        var projections = corners.Select(c => Vector2.Dot(c, axis));
-        return (projections.Min(), projections.Max());
-    }
+        var centerProjection = Math.Abs(Vector3.Dot(centerDiff, axis));
 
+        var projection1 =
+            Math.Abs(Vector3.Dot(axes1[0], axis)) * halfSize1.X +
+            Math.Abs(Vector3.Dot(axes1[1], axis)) * halfSize1.Y +
+            Math.Abs(Vector3.Dot(axes1[2], axis)) * halfSize1.Z;
+
+        var projection2 =
+            Math.Abs(Vector3.Dot(axes2[0], axis)) * halfSize2.X +
+            Math.Abs(Vector3.Dot(axes2[1], axis)) * halfSize2.Y +
+            Math.Abs(Vector3.Dot(axes2[2], axis)) * halfSize2.Z;
+
+        return centerProjection > projection1 + projection2;
+    }
 }
