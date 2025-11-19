@@ -1,4 +1,4 @@
 
 namespace Shelfie.Models.Dto;
 
-public record AuthResponseDto(string Jwt);
+public record AuthResponseDto(string Jwt, string RefreshToken);

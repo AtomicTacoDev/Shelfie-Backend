@@ -1,11 +1,14 @@
 
 using System.IdentityModel.Tokens.Jwt;
 using System.Security.Claims;
+using System.Security.Cryptography;
 using System.Text;
 using Microsoft.AspNetCore.Http.HttpResults;
 using Microsoft.AspNetCore.Identity;
+using Microsoft.EntityFrameworkCore;
 using Microsoft.IdentityModel.Tokens;
 using Shelfie.Data;
+using Shelfie.Data.Models;
 using Shelfie.Models;
 using Shelfie.Models.Dto;
 
@@ -17,14 +20,21 @@ public class AuthService(IConfiguration config, UserManager<User> userManager, A
     {
         var identityUser = await userManager.FindByEmailAsync(email);
         
-        return identityUser is null ? null : new UserDto(identityUser.UserName, identityUser.Email);
+        return identityUser is null ? null : new UserDto(identityUser.Id, identityUser.UserName, identityUser.Email);
     }
     
     public async Task<UserDto?> GetUserByName(string userName)
     {
         var identityUser = await userManager.FindByNameAsync(userName);
 
-        return identityUser is null ? null : new UserDto(identityUser.UserName, identityUser.Email);
+        return identityUser is null ? null : new UserDto(identityUser.Id, identityUser.UserName, identityUser.Email);
+    }
+    
+    public async Task<UserDto?> GetUserById(string id)
+    {
+        var identityUser = await userManager.FindByIdAsync(id);
+
+        return identityUser is null ? null : new UserDto(identityUser.Id, identityUser.UserName, identityUser.Email);
     }
 
     /*public async Task<bool> Register(string email, string username)
@@ -89,14 +99,61 @@ public class AuthService(IConfiguration config, UserManager<User> userManager, A
             var userInfo = await userResponse.Content.ReadFromJsonAsync<Dictionary<string, object>>();
             
             var email = userInfo?["email"].ToString();
-            var jwt = GenerateJwt(email);
+            var user = await GetUserByEmail(email);
             
-            return new AuthResponseDto(jwt);
+            var jwt = GenerateJwt(email);
+            var refreshToken = GenerateRefreshToken();
+            
+            var refreshTokenEntity= new RefreshToken
+            {
+                UserId = user.Id,
+                Token = refreshToken,
+                CreatedAt = DateTime.UtcNow,
+                ExpiresAt = DateTime.UtcNow.AddDays(int.Parse(config["Jwt:RefreshTokenExpiryDays"]!)),
+                IsRevoked = false
+            };
+
+            dbContext.RefreshTokens.Add(refreshTokenEntity);
+            await dbContext.SaveChangesAsync();
+            
+            return new AuthResponseDto(jwt, refreshToken);
         }
         catch
         {
             return null;
         }
+    }
+    
+    public async Task<AuthResponseDto?> ExchangeRefreshToken(string refreshToken)
+    {
+        var tokenEntity = await dbContext.RefreshTokens
+            .FirstOrDefaultAsync(t => t.Token == refreshToken && !t.IsRevoked);
+
+        if (tokenEntity == null || tokenEntity.ExpiresAt < DateTime.UtcNow)
+            return null;
+
+        var user = await GetUserById(tokenEntity.UserId);
+        if (user == null)
+            return null;
+        
+        tokenEntity.IsRevoked = true;
+
+        var newRefreshToken = GenerateRefreshToken();
+        var newRefreshTokenEntity = new RefreshToken
+        {
+            UserId = user.Id,
+            Token = newRefreshToken,
+            CreatedAt = DateTime.UtcNow,
+            ExpiresAt = DateTime.UtcNow.AddDays(int.Parse(config["Jwt:RefreshTokenExpiryDays"]!)),
+            IsRevoked = false
+        };
+
+        dbContext.RefreshTokens.Add(newRefreshTokenEntity);
+        await dbContext.SaveChangesAsync();
+
+        var jwt = GenerateJwt(user.Email);
+
+        return new AuthResponseDto(jwt, newRefreshToken);
     }
     
     private string GenerateJwt(string email)
@@ -119,5 +176,13 @@ public class AuthService(IConfiguration config, UserManager<User> userManager, A
         );
 
         return new JwtSecurityTokenHandler().WriteToken(token);
+    }
+    
+    private string GenerateRefreshToken()
+    {
+        var randomBytes = new byte[64];
+        RandomNumberGenerator.Create().GetBytes(randomBytes);
+        
+        return Convert.ToBase64String(randomBytes);
     }
 }

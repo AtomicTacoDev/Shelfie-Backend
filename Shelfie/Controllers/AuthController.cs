@@ -32,15 +32,42 @@ public partial class AuthController(IAuthService authService) : ControllerBase
         return Ok(user);
     }
     
+    [HttpPost("refresh")]
+    public async Task<ActionResult<AuthResponseDto>> ExchangeRefreshToken()
+    {
+        if (!Request.Cookies.TryGetValue("refreshToken", out var refreshToken))
+            return Unauthorized(new { message = "No refresh token" });
+        
+        var tokens = await authService.ExchangeRefreshToken(refreshToken);
+        if (tokens == null)
+            return Unauthorized(new { message = "Invalid or expired refresh token" });
+        
+        Response.Cookies.Append("refreshToken", tokens.RefreshToken, new CookieOptions
+        {
+            HttpOnly = true,
+            Secure = true,
+            SameSite = SameSiteMode.Strict,
+        });
+
+        return Ok(tokens);
+    }
+    
     [HttpPost("googleLogin")]
     public async Task<ActionResult<AuthResponseDto>> GoogleLogin([FromBody] GoogleLoginRequest request)
     {
-        var jwt = await authService.GoogleLogin(request.AuthCode);
+        var tokens = await authService.GoogleLogin(request.AuthCode);
         
-        if (jwt == null)
+        if (tokens == null)
             return BadRequest("Failed to exchange auth code.");
         
-        return Ok(jwt);
+        Response.Cookies.Append("refreshToken", tokens.RefreshToken, new CookieOptions
+        {
+            HttpOnly = true,
+            Secure = true,
+            SameSite = SameSiteMode.Strict,
+        });
+        
+        return Ok(tokens);
     }
 
     [HttpPost("signup")]
