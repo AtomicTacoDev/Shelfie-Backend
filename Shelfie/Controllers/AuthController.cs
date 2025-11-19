@@ -10,7 +10,7 @@ namespace Shelfie.Controllers;
 
 [ApiController]
 [Route("[controller]")]
-public partial class UserController(IUserService userService) : ControllerBase
+public partial class AuthController(IAuthService authService) : ControllerBase
 {
     public record GoogleLoginRequest(string AuthCode);
     public record RegisterRequest(string Username);
@@ -25,7 +25,7 @@ public partial class UserController(IUserService userService) : ControllerBase
     {
         var email = User.FindFirst(c => c.Type == System.Security.Claims.ClaimTypes.Email)!.Value;
 
-        var user = await userService.GetUserByEmail(email);
+        var user = await authService.GetUserByEmail(email);
         if (user == null || string.IsNullOrEmpty(user.UserName))
             return NotFound();
 
@@ -35,7 +35,7 @@ public partial class UserController(IUserService userService) : ControllerBase
     [HttpPost("googleLogin")]
     public async Task<ActionResult<AuthResponseDto>> GoogleLogin([FromBody] GoogleLoginRequest request)
     {
-        var jwt = await userService.GoogleLogin(request.AuthCode);
+        var jwt = await authService.GoogleLogin(request.AuthCode);
         
         if (jwt == null)
             return BadRequest("Failed to exchange auth code.");

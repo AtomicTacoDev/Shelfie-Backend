@@ -11,7 +11,7 @@ using Shelfie.Models.Dto;
 
 namespace Shelfie.Services;
 
-public class UserService(IConfiguration config, UserManager<User> userManager, ApplicationDbContext dbContext) : IUserService
+public class AuthService(IConfiguration config, UserManager<User> userManager, ApplicationDbContext dbContext) : IAuthService
 {
     public async Task<UserDto?> GetUserByEmail(string email)
     {

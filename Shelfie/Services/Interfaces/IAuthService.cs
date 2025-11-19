@@ -3,7 +3,7 @@ using Shelfie.Models.Dto;
 
 namespace Shelfie.Services;
 
-public interface IUserService
+public interface IAuthService
 {
     public Task<UserDto?> GetUserByEmail(string email);
     public Task<UserDto?> GetUserByName(string userName);

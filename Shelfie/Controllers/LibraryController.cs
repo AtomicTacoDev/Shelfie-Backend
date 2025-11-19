@@ -10,7 +10,7 @@ namespace Shelfie.Controllers;
 [Authorize]
 [ApiController]
 [Route("[controller]")]
-public partial class LibraryController(IUserService userService, ILibraryService libraryService) : ControllerBase
+public partial class LibraryController(IAuthService authService, ILibraryService libraryService) : ControllerBase
 {
     public record PlaceObjectRequest(string ObjectTypeId, PositionDto Position, float Rotation);
     public record MoveObjectRequest(PositionDto Position, float Rotation);
@@ -18,7 +18,7 @@ public partial class LibraryController(IUserService userService, ILibraryService
     [HttpGet("{userName}")]
     public async Task<IActionResult> GetLibraryData(string userName)
     {
-        var user = await userService.GetUserByName(userName);
+        var user = await authService.GetUserByName(userName);
         if (user == null || string.IsNullOrEmpty(user.UserName))
             return NotFound(new { message = "User not found" });
 
