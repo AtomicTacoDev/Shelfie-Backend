@@ -1,7 +1,7 @@
 
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
-using Microsoft.EntityFrameworkCore;
+using Newtonsoft.Json;
 using Shelfie.Models.Dto;
 using Shelfie.Services;
 
@@ -10,7 +10,11 @@ namespace Shelfie.Controllers;
 [Authorize]
 [ApiController]
 [Route("[controller]")]
-public partial class LibraryController(IAuthService authService, ILibraryService libraryService) : ControllerBase
+public partial class LibraryController(
+    IAuthService authService,
+    ILibraryService libraryService,
+    IObjectDefinitionService objectDefinitionService
+    ) : ControllerBase
 {
     public record PlaceObjectRequest(string ObjectTypeId, PositionDto Position, float Rotation);
     public record MoveObjectRequest(PositionDto Position, float Rotation);
@@ -38,6 +42,9 @@ public partial class LibraryController(IAuthService authService, ILibraryService
     [HttpPost("{userName}/objects")]
     public async Task<ActionResult<PlacedObjectDto>> PlaceObject(string userName, [FromBody] PlaceObjectRequest request)
     {
+        var definition = objectDefinitionService.GetDefinition(request.ObjectTypeId);
+        if (definition == null) return BadRequest(new { message = "Object type not found" });
+        
         var newObject = await libraryService.TryPlaceObject(userName, request.ObjectTypeId, request.Position, request.Rotation);
         
         if (newObject is null) return BadRequest();

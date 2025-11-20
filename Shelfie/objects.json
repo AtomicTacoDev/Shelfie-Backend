@@ -1,0 +1,13 @@
+
+{
+  "bookshelf_000": {
+    "name": "Bookshelf",
+    "modelPath": "Models/bookshelf_000.glb",
+    "size": [0.325, 2.5, 1.6]
+  },
+  "cube": {
+    "name": "Cube",
+    "modelPath": "Models/cube.glb",
+    "size": [1, 1, 1]
+  }
+}
