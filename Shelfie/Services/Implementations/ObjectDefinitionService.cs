@@ -7,7 +7,7 @@ public class ObjectDefinitionService : IObjectDefinitionService
 {
     private readonly Dictionary<string, ObjectDefinition> _definitions;
 
-    public ObjectDefinitionService(IConfiguration configuration)
+    public ObjectDefinitionService()
     {
         var json = File.ReadAllText("./objects.json");
         _definitions = JsonConvert.DeserializeObject<Dictionary<string, ObjectDefinition>>(json) 
@@ -17,5 +17,10 @@ public class ObjectDefinitionService : IObjectDefinitionService
     public ObjectDefinition? GetDefinition(string objectTypeId)
     {
         return _definitions.GetValueOrDefault(objectTypeId);
+    }
+
+    public Dictionary<string, ObjectDefinition> GetAllDefinitions()
+    {
+        return _definitions;
     }
 }

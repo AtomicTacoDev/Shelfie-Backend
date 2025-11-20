@@ -1,6 +1,16 @@
 
 using System.Numerics;
+using Newtonsoft.Json;
+using Shelfie.Utils;
 
 namespace Shelfie;
 
-public record ObjectDefinition(string Id, string Name, string ModelPath, Vector3 Size);
+public class ObjectDefinition
+{
+    public string Name { get; set; } = string.Empty;
+    
+    public string ModelPath { get; set; } = string.Empty;
+    
+    [JsonConverter(typeof(Vector3JsonConverter))]
+    public Vector3 Size { get; set; }
+}
