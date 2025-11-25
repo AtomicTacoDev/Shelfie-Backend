@@ -27,6 +27,7 @@ builder.Services.AddSingleton<IObjectDefinitionService, ObjectDefinitionService>
 
 builder.Services.AddScoped<IAuthService, AuthService>();
 builder.Services.AddScoped<ILibraryService, LibraryService>();
+builder.Services.AddScoped<IBooksService, BooksService>();
 
 // Add services to the container.
 

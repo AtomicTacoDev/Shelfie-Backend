@@ -2,6 +2,7 @@ using System.Numerics;
 using Microsoft.EntityFrameworkCore;
 using Npgsql;
 using Shelfie.Data;
+using Shelfie.Data.Models;
 using Shelfie.Models;
 using Shelfie.Models.Dto;
 

@@ -13,9 +13,11 @@ public class ApplicationDbContext : IdentityDbContext<User>
         
     }
     
+    public DbSet<RefreshToken> RefreshTokens { get; set; } = null!;
+    
     public DbSet<Library> Libraries { get; set; } = null!;
     public DbSet<PlacedObject> PlacedObjects { get; set; } = null!;
-    public DbSet<RefreshToken> RefreshTokens { get; set; } = null!;
+    public DbSet<UserBook> UserBooks { get; set; } = null!;
     
     protected override void OnModelCreating(ModelBuilder builder)
     {
@@ -23,8 +25,10 @@ public class ApplicationDbContext : IdentityDbContext<User>
 
         builder.HasDefaultSchema("identity");
         
+        builder.Entity<RefreshToken>().ToTable("RefreshTokens", schema: "app");
+        
         builder.Entity<Library>().ToTable("Libraries", schema: "app");
         builder.Entity<PlacedObject>().ToTable("PlacedObjects", schema: "app");
-        builder.Entity<RefreshToken>().ToTable("RefreshTokens", schema: "app");
+        builder.Entity<UserBook>().ToTable("UserBooks", schema: "app");
     }
 }

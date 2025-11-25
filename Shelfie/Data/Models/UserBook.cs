@@ -5,7 +5,7 @@ using Shelfie.Models;
 
 namespace Shelfie.Data.Models;
 
-public class Library
+public class UserBook
 {
     [Key]
     public int Id { get; set; }
@@ -15,6 +15,4 @@ public class Library
     
     [ForeignKey(nameof(UserId))]
     public User User { get; set; }
-    
-    public ICollection<PlacedObject> Objects { get; set; } = new List<PlacedObject>();
 }

@@ -155,6 +155,25 @@ namespace Shelfie.Migrations
                     b.ToTable("AspNetUserTokens", "identity");
                 });
 
+            modelBuilder.Entity("Shelfie.Data.Models.Library", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("integer");
+
+                    NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<int>("Id"));
+
+                    b.Property<string>("UserId")
+                        .IsRequired()
+                        .HasColumnType("text");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("UserId");
+
+                    b.ToTable("Libraries", "app");
+                });
+
             modelBuilder.Entity("Shelfie.Data.Models.RefreshToken", b =>
                 {
                     b.Property<int>("Id")
@@ -185,7 +204,7 @@ namespace Shelfie.Migrations
                     b.ToTable("RefreshTokens", "app");
                 });
 
-            modelBuilder.Entity("Shelfie.Models.Library", b =>
+            modelBuilder.Entity("Shelfie.Data.Models.UserBook", b =>
                 {
                     b.Property<int>("Id")
                         .ValueGeneratedOnAdd()
@@ -201,7 +220,7 @@ namespace Shelfie.Migrations
 
                     b.HasIndex("UserId");
 
-                    b.ToTable("Libraries", "app");
+                    b.ToTable("UserBooks", "app");
                 });
 
             modelBuilder.Entity("Shelfie.Models.PlacedObject", b =>
@@ -353,7 +372,18 @@ namespace Shelfie.Migrations
                         .IsRequired();
                 });
 
-            modelBuilder.Entity("Shelfie.Models.Library", b =>
+            modelBuilder.Entity("Shelfie.Data.Models.Library", b =>
+                {
+                    b.HasOne("Shelfie.Models.User", "User")
+                        .WithMany()
+                        .HasForeignKey("UserId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("User");
+                });
+
+            modelBuilder.Entity("Shelfie.Data.Models.UserBook", b =>
                 {
                     b.HasOne("Shelfie.Models.User", "User")
                         .WithMany()
@@ -366,7 +396,7 @@ namespace Shelfie.Migrations
 
             modelBuilder.Entity("Shelfie.Models.PlacedObject", b =>
                 {
-                    b.HasOne("Shelfie.Models.Library", "Library")
+                    b.HasOne("Shelfie.Data.Models.Library", "Library")
                         .WithMany("Objects")
                         .HasForeignKey("LibraryId")
                         .OnDelete(DeleteBehavior.Cascade)
@@ -375,7 +405,7 @@ namespace Shelfie.Migrations
                     b.Navigation("Library");
                 });
 
-            modelBuilder.Entity("Shelfie.Models.Library", b =>
+            modelBuilder.Entity("Shelfie.Data.Models.Library", b =>
                 {
                     b.Navigation("Objects");
                 });
