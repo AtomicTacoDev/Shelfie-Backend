@@ -3,6 +3,7 @@ using Microsoft.EntityFrameworkCore;
 using Newtonsoft.Json;
 using Newtonsoft.Json.Linq;
 using Shelfie.Data;
+using Shelfie.Data.Models;
 using Shelfie.Models.Dto;
 
 namespace Shelfie.Services;
@@ -15,14 +16,13 @@ public class BooksService(ApplicationDbContext dbContext, HttpClient httpClient)
             .Include(book => book.User)
             .Where(book => book.User.UserName == userName)
             .Select(book => new BookDto(
-                "Placeholder Name",
-                "Placeholder Author",
-                "Placeholder Description",
-                "url",
-                "1990-01-01",
-                999,
-                4.5f,
-                50
+                book.Title,
+                book.Author,
+                book.Description,
+                book.CoverUrl,
+                book.PublishedDate,
+                book.PageCount,
+                book.Rating
             ))
             .ToListAsync();
     }
@@ -145,7 +145,6 @@ public class BooksService(ApplicationDbContext dbContext, HttpClient httpClient)
                 imageUrl,
                 publishedDate,
                 pageCount,
-                0.0f,
                 0
             );
         }
@@ -157,6 +156,69 @@ public class BooksService(ApplicationDbContext dbContext, HttpClient httpClient)
         {
             throw new Exception($"Failed to parse book data for ID '{id}': {ex.Message}", ex);
         }
+    }
+    
+    public async Task<BookDto> CreateBook(
+        string userId,
+        string title,
+        string author,
+        string? description,
+        string? pageCount,
+        string? publishedDate,
+        int rating,
+        string? coverUrl,
+        IFormFile? coverFile
+    )
+    {
+        var finalCoverUrl = coverUrl ?? string.Empty;
+
+        if (coverFile != null && coverFile.Length > 0)
+        {
+            var allowedExtensions = new[] { ".jpg", ".jpeg", ".png", ".gif", ".webp" };
+            var extension = Path.GetExtension(coverFile.FileName).ToLowerInvariant();
+
+            if (!allowedExtensions.Contains(extension))
+                throw new ArgumentException("Invalid file type. Only images are allowed.");
+
+            if (coverFile.Length > 5 * 1024 * 1024)
+                throw new ArgumentException("File size must be less than 5MB");
+
+            using var memoryStream = new MemoryStream();
+            await coverFile.CopyToAsync(memoryStream);
+            var fileBytes = memoryStream.ToArray();
+            var base64String = Convert.ToBase64String(fileBytes);
+
+            finalCoverUrl = $"data:{coverFile.ContentType};base64,{base64String}";
+        }
+
+        int pages = 0;
+        if (!string.IsNullOrWhiteSpace(pageCount) && int.TryParse(pageCount, out var pc))
+            pages = pc;
+
+        var book = new UserBook
+        {
+            UserId = userId,
+            Title = title,
+            Author = author,
+            Description = description ?? string.Empty,
+            PageCount = pages,
+            PublishedDate = publishedDate ?? string.Empty,
+            Rating = rating,
+            CoverUrl = finalCoverUrl
+        };
+
+        dbContext.UserBooks.Add(book);
+        await dbContext.SaveChangesAsync();
+
+        return new BookDto(
+            book.Title,
+            book.Author,
+            book.Description,
+            book.CoverUrl,
+            book.PublishedDate,
+            book.PageCount,
+            book.Rating
+        );
     }
 
     private string ExtractDescription(JToken descriptionToken)
