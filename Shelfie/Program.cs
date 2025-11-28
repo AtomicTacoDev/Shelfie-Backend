@@ -79,6 +79,13 @@ builder.Services.AddAuthentication(options =>
         };
     });
 
+builder.Services.AddHttpClient<IBooksService, BooksService>(client =>
+{
+    //client.BaseAddress = new Uri("https://www.googleapis.com/books/v1/");
+    client.BaseAddress = new Uri("https://openlibrary.org/");
+    client.DefaultRequestHeaders.Add("User-Agent", "Shelfie/shelfie3d.com (atomictacodev@gmail.com)");
+});
+
 var app = builder.Build();
 
 // Configure the HTTP request pipeline.
