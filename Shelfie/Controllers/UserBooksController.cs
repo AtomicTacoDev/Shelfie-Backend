@@ -1,5 +1,6 @@
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.EntityFrameworkCore;
 using Shelfie.Data;
 using Shelfie.Data.Models;
 using Shelfie.Models.Dto;
@@ -21,7 +22,17 @@ public class UserBooksController(IBooksService booksService, IAuthService authSe
         public string? PageCount { get; init; }
         public string? PublishedDate { get; init; }
         public int Rating { get; init; }
-        public string? CoverUrl { get; init; } // Can be URL or base64
+        public string? CoverUrl { get; init; }
+    }
+    public record UpdateBookRequest
+    {
+        public string Title { get; init; } = string.Empty;
+        public string Author { get; init; } = string.Empty;
+        public string? Description { get; init; }
+        public string? PageCount { get; init; }
+        public string? PublishedDate { get; init; }
+        public int Rating { get; init; }
+        public string? CoverUrl { get; init; }
     }
     
     [HttpGet("{userName}")]
@@ -34,6 +45,28 @@ public class UserBooksController(IBooksService booksService, IAuthService authSe
         var books = await booksService.GetBooksByUserName(userName);
         
         return Ok(books);
+    }
+    
+    [HttpGet("details/{id}")]
+    public async Task<ActionResult<BookDto>> GetBookById(int id)
+    {
+        var book = await context.UserBooks
+            .Include(b => b.User)
+            .FirstOrDefaultAsync(b => b.Id == id);
+
+        if (book == null)
+            return NotFound(new { message = "Book not found" });
+
+        return Ok(new BookDto(
+            book.Id,
+            book.Title,
+            book.Author,
+            book.Description,
+            book.CoverUrl,
+            book.PublishedDate,
+            book.PageCount,
+            book.Rating
+        ));
     }
 
     [HttpPost]
@@ -63,5 +96,60 @@ public class UserBooksController(IBooksService booksService, IAuthService authSe
         );
 
         return Ok(book);
+    }
+    
+    [HttpPatch("{id}")]
+    public async Task<ActionResult<BookDto>> UpdateBook(int id, [FromForm] UpdateBookRequest request, [FromForm] IFormFile? cover)
+    {
+        if (string.IsNullOrWhiteSpace(request.Title) || string.IsNullOrWhiteSpace(request.Author))
+        {
+            return BadRequest("Title and author are required");
+        }
+
+        var book = await context.UserBooks
+            .Include(b => b.User)
+            .FirstOrDefaultAsync(b => b.Id == id);
+
+        if (book == null)
+            return NotFound(new { message = "Book not found" });
+        
+        var currentUser = await authService.GetUserByName(User.Identity?.Name ?? "");
+        if (currentUser == null || book.UserId != currentUser.Id)
+            return Forbid();
+
+        var updatedBook = await booksService.UpdateBook(
+            id,
+            request.Title,
+            request.Author,
+            request.Description,
+            request.PageCount,
+            request.PublishedDate,
+            request.Rating,
+            request.CoverUrl,
+            cover
+        );
+
+        return Ok(updatedBook);
+    }
+
+    [HttpDelete("{id}")]
+    public async Task<ActionResult> DeleteBook(int id)
+    {
+        var book = await context.UserBooks
+            .Include(b => b.User)
+            .FirstOrDefaultAsync(b => b.Id == id);
+
+        if (book == null)
+            return NotFound(new { message = "Book not found" });
+    
+        var currentUser = await authService.GetUserByName(User.Identity?.Name ?? "");
+    
+        if (currentUser == null || book.UserId != currentUser.Id)
+            return Forbid();
+
+        context.UserBooks.Remove(book);
+        await context.SaveChangesAsync();
+
+        return NoContent();
     }
 }

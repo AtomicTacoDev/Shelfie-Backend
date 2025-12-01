@@ -19,4 +19,15 @@ public interface IBooksService
         string? coverUrl,
         IFormFile? coverFile
     );
+    public Task<BookDto> UpdateBook(
+        int id,
+        string title,
+        string author,
+        string? description,
+        string? pageCount,
+        string? publishedDate,
+        int rating,
+        string? coverUrl,
+        IFormFile? coverFile
+    );
 }

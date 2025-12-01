@@ -101,7 +101,7 @@ public class AuthService(IConfiguration config, UserManager<User> userManager, A
             var email = userInfo?["email"].ToString();
             var user = await GetUserByEmail(email);
             
-            var jwt = GenerateJwt(email);
+            var jwt = await GenerateJwt(email);
             var refreshToken = GenerateRefreshToken();
             
             var refreshTokenEntity= new RefreshToken
@@ -151,13 +151,17 @@ public class AuthService(IConfiguration config, UserManager<User> userManager, A
         dbContext.RefreshTokens.Add(newRefreshTokenEntity);
         await dbContext.SaveChangesAsync();
 
-        var jwt = GenerateJwt(user.Email);
+        var jwt = await GenerateJwt(user.Email);
 
         return new AuthResponseDto(jwt, newRefreshToken);
     }
     
-    private string GenerateJwt(string email)
+    private async Task<string> GenerateJwt(string email)
     {
+        var user = await GetUserByEmail(email);
+        if (user == null)
+            throw new ArgumentException("User not found");
+        
         var key = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(config["Jwt:Key"]));
         var credentials = new SigningCredentials(key, SecurityAlgorithms.HmacSha256);
 
@@ -165,6 +169,7 @@ public class AuthService(IConfiguration config, UserManager<User> userManager, A
         {
             new Claim(JwtRegisteredClaimNames.Jti, Guid.NewGuid().ToString()),
             new Claim(JwtRegisteredClaimNames.Email, email),
+            new Claim(ClaimTypes.Name, user.UserName)
         };
 
         var token = new JwtSecurityToken(

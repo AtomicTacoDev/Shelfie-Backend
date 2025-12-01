@@ -16,6 +16,7 @@ public class BooksService(ApplicationDbContext dbContext, HttpClient httpClient)
             .Include(book => book.User)
             .Where(book => book.User.UserName == userName)
             .Select(book => new BookDto(
+                book.Id,
                 book.Title,
                 book.Author,
                 book.Description,
@@ -139,7 +140,8 @@ public class BooksService(ApplicationDbContext dbContext, HttpClient httpClient)
             }
 
             return new BookDto(
-                title ?? "Unknown Title",
+                0,
+                title,
                 authorName,
                 description,
                 imageUrl,
@@ -211,6 +213,75 @@ public class BooksService(ApplicationDbContext dbContext, HttpClient httpClient)
         await dbContext.SaveChangesAsync();
 
         return new BookDto(
+            book.Id,
+            book.Title,
+            book.Author,
+            book.Description,
+            book.CoverUrl,
+            book.PublishedDate,
+            book.PageCount,
+            book.Rating
+        );
+    }
+    
+    public async Task<BookDto> UpdateBook(
+        int id,
+        string title,
+        string author,
+        string? description,
+        string? pageCount,
+        string? publishedDate,
+        int rating,
+        string? coverUrl,
+        IFormFile? coverFile
+    )
+    {
+        var book = await dbContext.UserBooks.FindAsync(id);
+        if (book == null)
+            throw new ArgumentException("Book not found");
+
+        book.Title = title;
+        book.Author = author;
+        book.Description = description ?? string.Empty;
+        book.Rating = rating;
+        book.PublishedDate = publishedDate ?? string.Empty;
+
+        int pages = 0;
+        if (!string.IsNullOrWhiteSpace(pageCount) && int.TryParse(pageCount, out var pc))
+            pages = pc;
+        book.PageCount = pages;
+
+        if (coverFile != null && coverFile.Length > 0)
+        {
+            var allowedExtensions = new[] { ".jpg", ".jpeg", ".png", ".gif", ".webp" };
+            var extension = Path.GetExtension(coverFile.FileName).ToLowerInvariant();
+
+            if (!allowedExtensions.Contains(extension))
+                throw new ArgumentException("Invalid file type. Only images are allowed.");
+
+            if (coverFile.Length > 5 * 1024 * 1024)
+                throw new ArgumentException("File size must be less than 5MB");
+
+            using var memoryStream = new MemoryStream();
+            await coverFile.CopyToAsync(memoryStream);
+            var fileBytes = memoryStream.ToArray();
+            var base64String = Convert.ToBase64String(fileBytes);
+
+            book.CoverUrl = $"data:{coverFile.ContentType};base64,{base64String}";
+        }
+        else if (!string.IsNullOrEmpty(coverUrl))
+        {
+            book.CoverUrl = coverUrl;
+        }
+        else
+        {
+            book.CoverUrl = string.Empty;
+        }
+
+        await dbContext.SaveChangesAsync();
+
+        return new BookDto(
+            book.Id,
             book.Title,
             book.Author,
             book.Description,
