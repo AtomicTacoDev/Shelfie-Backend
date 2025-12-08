@@ -20,7 +20,7 @@ public class LibraryService(ApplicationDbContext dbContext) : ILibraryService
     public async Task<IReadOnlyList<PlacedObjectDto>> GetObjects(string userName)
     {
         var library = await GetLibrary(userName);
-
+        
         return library.Objects
             .Select(obj => new PlacedObjectDto(
                 obj.Id,
@@ -44,6 +44,12 @@ public class LibraryService(ApplicationDbContext dbContext) : ILibraryService
             try
             {
                 var library = await GetLibrary(userName);
+                
+                if (library == null)
+                {
+                    await transaction.RollbackAsync();
+                    return null;
+                }
 
                 if (IsPositionOccupied(library, position, rotation, -1))
                 {

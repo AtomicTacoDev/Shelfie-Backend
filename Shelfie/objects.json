@@ -2,12 +2,11 @@
 {
   "bookshelf_000": {
     "name": "Bookshelf",
-    "modelPath": "/models/bookshelf_000.glb",
-    "size": [0.325, 2.5, 1.6]
+    "size": [0.325, 2.5, 1.6],
+    "isBookshelf": true
   },
   "cube": {
     "name": "Cube",
-    "modelPath": "/models/cube.glb",
     "size": [1, 1, 1]
   }
 }

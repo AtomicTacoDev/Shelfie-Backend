@@ -1,8 +1,9 @@
-
 using System.Globalization;
+using System.Security.Claims;
 using System.Text.RegularExpressions;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.IdentityModel.JsonWebTokens;
 using Shelfie.Models.Dto;
 using Shelfie.Services;
 
@@ -23,12 +24,14 @@ public partial class AuthController(IAuthService authService) : ControllerBase
     [HttpGet("me")]
     public async Task<ActionResult<UserDto>> Me()
     {
-        var email = User.FindFirst(c => c.Type == System.Security.Claims.ClaimTypes.Email)!.Value;
+        var email = User.FindFirst(c => c.Type == ClaimTypes.Email)!.Value;
 
         var user = await authService.GetUserByEmail(email);
         if (user == null || string.IsNullOrEmpty(user.UserName))
+        {
             return NotFound();
-
+        }
+        
         return Ok(user);
     }
     
@@ -36,11 +39,15 @@ public partial class AuthController(IAuthService authService) : ControllerBase
     public async Task<ActionResult<AuthResponseDto>> ExchangeRefreshToken()
     {
         if (!Request.Cookies.TryGetValue("refreshToken", out var refreshToken))
+        {
             return Unauthorized(new { message = "No refresh token" });
+        }
         
         var tokens = await authService.ExchangeRefreshToken(refreshToken);
         if (tokens == null)
+        {
             return Unauthorized(new { message = "Invalid or expired refresh token" });
+        }
         
         Response.Cookies.Append("refreshToken", tokens.RefreshToken, new CookieOptions
         {
@@ -52,20 +59,43 @@ public partial class AuthController(IAuthService authService) : ControllerBase
         return Ok(tokens);
     }
     
+    [HttpPost("logout")]
+    public async Task<IActionResult> Logout()
+    {
+        if (Request.Cookies.TryGetValue("refreshToken", out var refreshToken))
+        {
+            await authService.RevokeRefreshToken(refreshToken);
+            
+            Response.Cookies.Delete("refreshToken", new CookieOptions
+            {
+                HttpOnly = true,
+                Secure = true,
+                SameSite = SameSiteMode.Strict,
+            });
+        }
+        
+        return Ok();
+    }
+    
     [HttpPost("googleLogin")]
     public async Task<ActionResult<AuthResponseDto>> GoogleLogin([FromBody] GoogleLoginRequest request)
     {
         var tokens = await authService.GoogleLogin(request.AuthCode);
         
         if (tokens == null)
-            return BadRequest("Failed to exchange auth code.");
-        
-        Response.Cookies.Append("refreshToken", tokens.RefreshToken, new CookieOptions
         {
-            HttpOnly = true,
-            Secure = true,
-            SameSite = SameSiteMode.Strict,
-        });
+            return BadRequest("Failed to exchange auth code.");
+        }
+        
+        if (tokens.RefreshToken != null)
+        {
+            Response.Cookies.Append("refreshToken", tokens.RefreshToken, new CookieOptions
+            {
+                HttpOnly = true,
+                Secure = true,
+                SameSite = SameSiteMode.Strict,
+            });
+        }
         
         return Ok(tokens);
     }
@@ -87,21 +117,42 @@ public partial class AuthController(IAuthService authService) : ControllerBase
     
     [Authorize]
     [HttpPost("register")]
-    public async Task<ActionResult> Register([FromBody] RegisterRequest request)
+    public async Task<ActionResult<UserDto>> Register([FromBody] RegisterRequest request)
     {
-        var email = User.FindFirst(c => c.Type == System.Security.Claims.ClaimTypes.Email)?.Value;
         var username = request.Username.Trim();
         
         if (string.IsNullOrWhiteSpace(username))
+        {
             return BadRequest("Username cannot be empty.");
+        }
         
         if (username.Length is < 3 or > 20)
+        {
             return BadRequest("Username must be between 3 and 20 characters.");
+        }
 
         if (!UsernameRegex().IsMatch(username))
+        {
             return BadRequest("Username can only contain letters and numbers.");
+        }
         
-        throw new NotImplementedException();
+        var email = User.FindFirst(ClaimTypes.Email)?.Value 
+                    ?? User.FindFirst(JwtRegisteredClaimNames.Email)?.Value;
+
+        if (string.IsNullOrEmpty(email))
+        {
+            return BadRequest("Email not found in token.");
+        }
+
+        var refreshToken = await authService.Register(email, username);
+        
+        if (refreshToken is null)
+        {
+            return BadRequest("Username already taken.");
+        }
+        
+        var user = await authService.GetUserByEmail(email);
+        return Ok(user);
     }
     
     private static bool IsValidEmail(string email)

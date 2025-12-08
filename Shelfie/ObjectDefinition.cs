@@ -11,6 +11,8 @@ public class ObjectDefinition
     
     public string ModelPath { get; set; } = string.Empty;
     
+    public bool? IsBookshelf { get; set; } = null;
+    
     [JsonConverter(typeof(Vector3JsonConverter))]
     public Vector3 Size { get; set; }
 }

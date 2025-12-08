@@ -1,9 +1,7 @@
-
 using System.IdentityModel.Tokens.Jwt;
 using System.Security.Claims;
 using System.Security.Cryptography;
 using System.Text;
-using Microsoft.AspNetCore.Http.HttpResults;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.IdentityModel.Tokens;
@@ -37,34 +35,48 @@ public class AuthService(IConfiguration config, UserManager<User> userManager, A
         return identityUser is null ? null : new UserDto(identityUser.Id, identityUser.UserName, identityUser.Email);
     }
 
-    /*public async Task<bool> Register(string email, string username)
+    public async Task<string?> Register(string email, string username)
     {
+        var existingUser = await userManager.FindByNameAsync(username);
+        if (existingUser != null)
+        {
+            return null;
+        }
+        
         var user = new User
         {
             Email = email,
-            UserName = username
+            UserName = username,
+            EmailConfirmed = true
         };
-
-        var result = await userManager.CreateAsync(user);
         
-        if (!result.Succeeded) return false;
+        var createResult = await userManager.CreateAsync(user);
         
-        var library = new Library
+        if (!createResult.Succeeded)
+        {
+            return null;
+        }
+         
+        dbContext.Libraries.Add(new Library
         {
             UserId = user.Id,
             Objects = new List<PlacedObject>()
-        };
-
-        dbContext.Libraries.Add(library);
+        });
+        
+        var refreshToken = GenerateRefreshToken();
+        dbContext.RefreshTokens.Add(new RefreshToken
+        {
+            UserId = user.Id,
+            Token = refreshToken,
+            CreatedAt = DateTime.UtcNow,
+            ExpiresAt = DateTime.UtcNow.AddDays(int.Parse(config["Jwt:RefreshTokenExpiryDays"]!)),
+            IsRevoked = false
+        });
+        
         await dbContext.SaveChangesAsync();
 
-        return true;
+        return refreshToken;
     }
-
-    public Task SignUp(string email, string password)
-    {
-        throw new NotImplementedException();
-    }*/
 
     public async Task<AuthResponseDto?> GoogleLogin(string authCode)
     {
@@ -84,12 +96,8 @@ public class AuthService(IConfiguration config, UserManager<User> userManager, A
             
             if (!response.IsSuccessStatusCode)
             {
-                var errorBody = await response.Content.ReadAsStringAsync();
-                Console.WriteLine($"Token request failed: {response.StatusCode} {errorBody}");
                 return null;
             }
-            
-            response.EnsureSuccessStatusCode();
             
             var tokenResponse = await response.Content.ReadFromJsonAsync<Dictionary<string, object>>();
             var accessToken = tokenResponse?["access_token"].ToString();
@@ -99,12 +107,18 @@ public class AuthService(IConfiguration config, UserManager<User> userManager, A
             var userInfo = await userResponse.Content.ReadFromJsonAsync<Dictionary<string, object>>();
             
             var email = userInfo?["email"].ToString();
-            var user = await GetUserByEmail(email);
+            
+            var user = await userManager.FindByEmailAsync(email);
             
             var jwt = await GenerateJwt(email);
-            var refreshToken = GenerateRefreshToken();
             
-            var refreshTokenEntity= new RefreshToken
+            if (user == null || string.IsNullOrEmpty(user.UserName))
+            {
+                return new AuthResponseDto(jwt, null);
+            }
+            
+            var refreshToken = GenerateRefreshToken();
+            var refreshTokenEntity = new RefreshToken
             {
                 UserId = user.Id,
                 Token = refreshToken,
@@ -112,7 +126,7 @@ public class AuthService(IConfiguration config, UserManager<User> userManager, A
                 ExpiresAt = DateTime.UtcNow.AddDays(int.Parse(config["Jwt:RefreshTokenExpiryDays"]!)),
                 IsRevoked = false
             };
-
+                
             dbContext.RefreshTokens.Add(refreshTokenEntity);
             await dbContext.SaveChangesAsync();
             
@@ -156,20 +170,27 @@ public class AuthService(IConfiguration config, UserManager<User> userManager, A
         return new AuthResponseDto(jwt, newRefreshToken);
     }
     
+    public async Task RevokeRefreshToken(string refreshToken)
+    {
+        var tokenEntity = await dbContext.RefreshTokens
+            .FirstOrDefaultAsync(t => t.Token == refreshToken);
+
+        if (tokenEntity != null)
+        {
+            tokenEntity.IsRevoked = true;
+            await dbContext.SaveChangesAsync();
+        }
+    }
+    
     private async Task<string> GenerateJwt(string email)
     {
-        var user = await GetUserByEmail(email);
-        if (user == null)
-            throw new ArgumentException("User not found");
-        
         var key = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(config["Jwt:Key"]));
         var credentials = new SigningCredentials(key, SecurityAlgorithms.HmacSha256);
 
         var claims = new[]
         {
             new Claim(JwtRegisteredClaimNames.Jti, Guid.NewGuid().ToString()),
-            new Claim(JwtRegisteredClaimNames.Email, email),
-            new Claim(ClaimTypes.Name, user.UserName)
+            new Claim(JwtRegisteredClaimNames.Email, email)
         };
 
         var token = new JwtSecurityToken(
