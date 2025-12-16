@@ -150,6 +150,68 @@ public class LibraryService(ApplicationDbContext dbContext) : ILibraryService
         }
     }
     
+    public async Task<BookshelfDataDto?> GetBookshelfData(string userName, int bookshelfId)
+    {
+        var library = await GetLibrary(userName);
+
+        var placedObject = library?.Objects.FirstOrDefault(o => o.Id == bookshelfId);
+        if (placedObject == null) return null;
+
+        var bookshelfBooks = await dbContext.BookshelfBooks
+            .Include(book => book.UserBook)
+            .Where(book => book.PlacedObjectId == bookshelfId)
+            .OrderBy(book => book.ShelfId)
+            .ThenBy(book => book.Index)
+            .ToListAsync();
+
+        var groupedByShelves = bookshelfBooks
+            .GroupBy(bb => bb.ShelfId)
+            .Select(group => new BookshelfShelfDto(
+                group.Key,
+                group.Select(book => new BookshelfBookDto(
+                    $"{book.UserBookId}-{book.Id}",
+                    book.UserBookId,
+                    book.UserBook.Title,
+                    book.UserBook.Author,
+                    book.Color,
+                    book.Index
+                )).ToList()
+            ))
+            .ToList();
+
+        return new BookshelfDataDto(groupedByShelves);
+    }
+
+    public async Task<BookshelfDataDto> UpdateBookshelfData(string userName, int bookshelfId, BookshelfDataDto data)
+    {
+        var existingBooks = await dbContext.BookshelfBooks
+            .Where(book => book.PlacedObjectId == bookshelfId)
+            .ToListAsync();
+        
+        dbContext.BookshelfBooks.RemoveRange(existingBooks);
+        
+        foreach (var shelf in data.Shelves)
+        {
+            foreach (var book in shelf.Books)
+            {
+                var bookshelfBook = new BookshelfBook
+                {
+                    PlacedObjectId = bookshelfId,
+                    UserBookId = book.UserBookId,
+                    ShelfId = shelf.Id,
+                    Index = book.Index,
+                    Color = book.Color
+                };
+                dbContext.BookshelfBooks.Add(bookshelfBook);
+            }
+        }
+
+        await dbContext.SaveChangesAsync();
+
+        return await GetBookshelfData(userName, bookshelfId) ?? data;
+    }
+    
+    /* HELPERS */
     public async Task<Library?> GetLibrary(string userName) => await dbContext.Libraries
         .Include(l => l.Objects)
         .Include(l => l.User)

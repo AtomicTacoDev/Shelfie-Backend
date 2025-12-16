@@ -1,0 +1,20 @@
+
+namespace Shelfie.Models.Dto;
+
+public record BookshelfBookDto(
+    string Id,
+    int UserBookId,
+    string Title,
+    string Author,
+    string Color,
+    int Index
+);
+
+public record BookshelfShelfDto(
+    string Id,
+    List<BookshelfBookDto> Books
+);
+
+public record BookshelfDataDto(
+    List<BookshelfShelfDto> Shelves
+);

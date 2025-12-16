@@ -92,4 +92,28 @@ public partial class LibraryController(
         
         return NoContent();
     }
+    
+    [HttpGet("{userName}/objects/bookshelf/{bookshelfId}")]
+    public async Task<ActionResult<BookshelfDataDto>> GetBookshelfData(string userName, int bookshelfId)
+    {
+        var data = await libraryService.GetBookshelfData(userName, bookshelfId);
+        if (data == null)
+            return NotFound(new { message = "Bookshelf not found" });
+
+        return Ok(data);
+    }
+
+    [HttpPut("{userName}/objects/bookshelf/{bookshelfId}")]
+    public async Task<ActionResult<BookshelfDataDto>> UpdateBookshelfData(string userName, int bookshelfId, [FromBody] BookshelfDataDto data)
+    {
+        try
+        {
+            var updatedData = await libraryService.UpdateBookshelfData(userName, bookshelfId, data);
+            return Ok(updatedData);
+        }
+        catch (InvalidOperationException ex)
+        {
+            return NotFound(new { message = ex.Message });
+        }
+    }
 }
