@@ -1,40 +1,23 @@
+
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
-using Microsoft.EntityFrameworkCore;
-using Shelfie.Data;
-using Shelfie.Data.Models;
 using Shelfie.Models.Dto;
 using Shelfie.Services;
 
 namespace Shelfie.Controllers;
 
+public record AddBookRequest
+{
+    public string? Isbn13 { get; init; }
+    public string? Isbn10 { get; init; }
+    public string? Isbn { get; init; }
+}
+
 [Authorize]
 [ApiController]
 [Route("books")]
-public class UserBooksController(IBooksService booksService, IAuthService authService, ApplicationDbContext context) : ControllerBase
+public class UserBooksController(IBooksService booksService, IAuthService authService) : ControllerBase
 {
-    public record CreateBookRequest
-    {
-        public string Username { get; init; } = string.Empty;
-        public string Title { get; init; } = string.Empty;
-        public string Author { get; init; } = string.Empty;
-        public string? Description { get; init; }
-        public string? PageCount { get; init; }
-        public string? PublishedDate { get; init; }
-        public int Rating { get; init; }
-        public string? CoverUrl { get; init; }
-    }
-    public record UpdateBookRequest
-    {
-        public string Title { get; init; } = string.Empty;
-        public string Author { get; init; } = string.Empty;
-        public string? Description { get; init; }
-        public string? PageCount { get; init; }
-        public string? PublishedDate { get; init; }
-        public int Rating { get; init; }
-        public string? CoverUrl { get; init; }
-    }
-    
     [HttpGet("{userName}")]
     public async Task<ActionResult<IReadOnlyCollection<BookDto>>> GetUserBooks(string userName)
     {
@@ -46,110 +29,40 @@ public class UserBooksController(IBooksService booksService, IAuthService authSe
         
         return Ok(books);
     }
-    
-    [HttpGet("details/{id}")]
-    public async Task<ActionResult<BookDto>> GetBookById(int id)
-    {
-        var book = await context.UserBooks
-            .Include(b => b.User)
-            .FirstOrDefaultAsync(b => b.Id == id);
-
-        if (book == null)
-            return NotFound(new { message = "Book not found" });
-
-        return Ok(new BookDto(
-            book.Id,
-            book.Title,
-            book.Author,
-            book.Description,
-            book.CoverUrl,
-            book.PublishedDate,
-            book.PageCount,
-            book.Rating
-        ));
-    }
 
     [HttpPost]
-    public async Task<ActionResult<BookDto>> CreateBook([FromForm] CreateBookRequest request, [FromForm] IFormFile? cover)
+    public async Task<ActionResult<BookDto>> AddBook([FromBody] AddBookRequest request)
     {
-        if (string.IsNullOrWhiteSpace(request.Username) ||
-            string.IsNullOrWhiteSpace(request.Title) ||
-            string.IsNullOrWhiteSpace(request.Author))
+        if (string.IsNullOrEmpty(request.Isbn13) && 
+            string.IsNullOrEmpty(request.Isbn10) && 
+            string.IsNullOrEmpty(request.Isbn))
         {
-            return BadRequest("Username, title and author are required");
+            return BadRequest("At least one ISBN must be provided");
         }
 
-        var user = await authService.GetUserByName(request.Username);
-        if (user == null)
-            return NotFound(new { message = "User not found" });
+        var currentUser = await authService.GetUserByName(User.Identity?.Name ?? "");
+        if (currentUser == null)
+            return Unauthorized();
 
-        var book = await booksService.CreateBook(
-            user.Id,
-            request.Title,
-            request.Author,
-            request.Description,
-            request.PageCount,
-            request.PublishedDate,
-            request.Rating,
-            request.CoverUrl,
-            cover
-        );
-
-        return Ok(book);
-    }
-    
-    [HttpPatch("{id}")]
-    public async Task<ActionResult<BookDto>> UpdateBook(int id, [FromForm] UpdateBookRequest request, [FromForm] IFormFile? cover)
-    {
-        if (string.IsNullOrWhiteSpace(request.Title) || string.IsNullOrWhiteSpace(request.Author))
+        try
         {
-            return BadRequest("Title and author are required");
+            var book = await booksService.AddBookToUser(currentUser.Id, request.Isbn13, request.Isbn10, request.Isbn);
+            return Ok(book);
         }
-
-        var book = await context.UserBooks
-            .Include(b => b.User)
-            .FirstOrDefaultAsync(b => b.Id == id);
-
-        if (book == null)
-            return NotFound(new { message = "Book not found" });
-        
-        var currentUser = await authService.GetUserByName(User.Identity?.Name ?? "");
-        if (currentUser == null || book.UserId != currentUser.Id)
-            return Forbid();
-
-        var updatedBook = await booksService.UpdateBook(
-            id,
-            request.Title,
-            request.Author,
-            request.Description,
-            request.PageCount,
-            request.PublishedDate,
-            request.Rating,
-            request.CoverUrl,
-            cover
-        );
-
-        return Ok(updatedBook);
+        catch (Exception ex)
+        {
+            return BadRequest(new { message = ex.Message });
+        }
     }
 
-    [HttpDelete("{id}")]
-    public async Task<ActionResult> DeleteBook(int id)
+    [HttpDelete("{bookId:int}")]
+    public async Task<ActionResult> DeleteBook(int bookId)
     {
-        var book = await context.UserBooks
-            .Include(b => b.User)
-            .FirstOrDefaultAsync(b => b.Id == id);
-
-        if (book == null)
-            return NotFound(new { message = "Book not found" });
-    
         var currentUser = await authService.GetUserByName(User.Identity?.Name ?? "");
-    
-        if (currentUser == null || book.UserId != currentUser.Id)
-            return Forbid();
+        if (currentUser == null)
+            return Unauthorized();
 
-        context.UserBooks.Remove(book);
-        await context.SaveChangesAsync();
-
+        await booksService.RemoveBookFromUser(currentUser.Id, bookId);
         return NoContent();
     }
 }

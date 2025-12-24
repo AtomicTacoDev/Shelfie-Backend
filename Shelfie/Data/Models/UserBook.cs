@@ -9,16 +9,15 @@ public class UserBook
 {
     [Key]
     public int Id { get; set; }
+    
     [Required]
     public string UserId { get; set; }
     
-    [Required] public string Title { get; set; }
-    [Required] public string Author { get; set; }
-    public string Description { get; set; }
-    [Column(TypeName = "text")] public string CoverUrl { get; set; }
-    public int PageCount { get; set; }
-    public int Rating { get; set; }
-    [Required] public string PublishedDate { get; set; }
+    [Required]
+    public int BookId { get; set; }
+    
+    [ForeignKey(nameof(BookId))]
+    public Book Book { get; set; }
     
     [ForeignKey(nameof(UserId))]
     public User User { get; set; }

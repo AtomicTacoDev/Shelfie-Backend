@@ -80,10 +80,18 @@ builder.Services.AddAuthentication(options =>
         };
     });
 
+var isbndbApiKey = Environment.GetEnvironmentVariable("ISBNDB_API_KEY")
+                   ?? builder.Configuration["Isbndb:ApiKey"];
+
+if (string.IsNullOrEmpty(isbndbApiKey))
+{
+    throw new InvalidOperationException("ISBNdb API key is not configured. Set ISBNDB_API_KEY environment variable or add it to appsettings.json");
+}
+
 builder.Services.AddHttpClient<IBooksService, BooksService>(client =>
 {
-    //client.BaseAddress = new Uri("https://www.googleapis.com/books/v1/");
-    client.BaseAddress = new Uri("https://openlibrary.org/");
+    client.BaseAddress = new Uri("https://api2.isbndb.com/");
+    client.DefaultRequestHeaders.Add("Authorization", isbndbApiKey);
     client.DefaultRequestHeaders.Add("User-Agent", "Shelfie/shelfie3d.com (atomictacodev@gmail.com)");
 });
 

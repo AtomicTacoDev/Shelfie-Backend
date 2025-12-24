@@ -184,14 +184,21 @@ public class AuthService(IConfiguration config, UserManager<User> userManager, A
     
     private async Task<string> GenerateJwt(string email)
     {
+        var user = await userManager.FindByEmailAsync(email);
+        
         var key = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(config["Jwt:Key"]));
         var credentials = new SigningCredentials(key, SecurityAlgorithms.HmacSha256);
 
-        var claims = new[]
+        var claims = new List<Claim>
         {
             new Claim(JwtRegisteredClaimNames.Jti, Guid.NewGuid().ToString()),
             new Claim(JwtRegisteredClaimNames.Email, email)
         };
+        
+        if (user != null && !string.IsNullOrEmpty(user.UserName))
+        {
+            claims.Add(new Claim(ClaimTypes.Name, user.UserName));
+        }
 
         var token = new JwtSecurityToken(
             issuer: config["Jwt:Issuer"],

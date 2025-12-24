@@ -1,3 +1,4 @@
+
 using System.Numerics;
 using Microsoft.EntityFrameworkCore;
 using Npgsql;
@@ -8,7 +9,7 @@ using Shelfie.Models.Dto;
 
 namespace Shelfie.Services;
 
-public class LibraryService(ApplicationDbContext dbContext) : ILibraryService
+public class LibraryService(ApplicationDbContext dbContext, IBooksService booksService) : ILibraryService
 {
     private const int MaxRetries = 3;
     
@@ -158,24 +159,29 @@ public class LibraryService(ApplicationDbContext dbContext) : ILibraryService
         if (placedObject == null) return null;
 
         var bookshelfBooks = await dbContext.BookshelfBooks
-            .Include(book => book.UserBook)
-            .Where(book => book.PlacedObjectId == bookshelfId)
-            .OrderBy(book => book.ShelfId)
-            .ThenBy(book => book.Index)
+            .Include(bb => bb.UserBook)
+            .ThenInclude(ub => ub.Book)
+            .Where(bb => bb.PlacedObjectId == bookshelfId)
+            .OrderBy(bb => bb.ShelfId)
+            .ThenBy(bb => bb.Index)
             .ToListAsync();
 
         var groupedByShelves = bookshelfBooks
             .GroupBy(bb => bb.ShelfId)
             .Select(group => new BookshelfShelfDto(
                 group.Key,
-                group.Select(book => new BookshelfBookDto(
-                    $"{book.UserBookId}-{book.Id}",
-                    book.UserBookId,
-                    book.UserBook.Title,
-                    book.UserBook.Author,
-                    book.Color,
-                    book.Index
-                )).ToList()
+                group.Select(bb =>
+                {
+                    var book = bb.UserBook.Book;
+                    return new BookshelfBookDto(
+                        $"{bb.UserBookId}-{bb.Id}",
+                        bb.UserBookId,
+                        book.Title,
+                        book.Author,
+                        bb.Color,
+                        bb.Index
+                    );
+                }).ToList()
             ))
             .ToList();
 
@@ -184,12 +190,45 @@ public class LibraryService(ApplicationDbContext dbContext) : ILibraryService
 
     public async Task<BookshelfDataDto> UpdateBookshelfData(string userName, int bookshelfId, BookshelfDataDto data)
     {
+        // Get the user to validate ownership
+        var library = await GetLibrary(userName);
+        if (library == null)
+            throw new InvalidOperationException("Library not found");
+
+        // Verify the bookshelf belongs to this user
+        var bookshelf = library.Objects.FirstOrDefault(o => o.Id == bookshelfId);
+        if (bookshelf == null)
+            throw new InvalidOperationException("Bookshelf not found");
+
+        // Get all UserBookIds that belong to this user for validation
+        var userBookIds = await dbContext.UserBooks
+            .Where(ub => ub.UserId == library.UserId)
+            .Select(ub => ub.Id)
+            .ToListAsync();
+
+        // Validate that all books being added belong to the user
+        var invalidBooks = data.Shelves
+            .SelectMany(s => s.Books)
+            .Where(b => !userBookIds.Contains(b.UserBookId))
+            .ToList();
+
+        if (invalidBooks.Any())
+        {
+            throw new InvalidOperationException(
+                $"Invalid books: {string.Join(", ", invalidBooks.Select(b => b.UserBookId))}. " +
+                "These books don't belong to this user."
+            );
+        }
+
+        // Remove existing books
         var existingBooks = await dbContext.BookshelfBooks
             .Where(book => book.PlacedObjectId == bookshelfId)
             .ToListAsync();
         
         dbContext.BookshelfBooks.RemoveRange(existingBooks);
+        await dbContext.SaveChangesAsync(); // Save the deletion first
         
+        // Add new books
         foreach (var shelf in data.Shelves)
         {
             foreach (var book in shelf.Books)
@@ -294,3 +333,4 @@ public class LibraryService(ApplicationDbContext dbContext) : ILibraryService
         return centerProjection > projection1 + projection2;
     }
 }
+

@@ -1,7 +1,6 @@
 
+using System.Text.Json;
 using Microsoft.EntityFrameworkCore;
-using Newtonsoft.Json;
-using Newtonsoft.Json.Linq;
 using Shelfie.Data;
 using Shelfie.Data.Models;
 using Shelfie.Models.Dto;
@@ -12,301 +11,246 @@ public class BooksService(ApplicationDbContext dbContext, HttpClient httpClient)
 {
     public async Task<IReadOnlyList<BookDto>> GetBooksByUserName(string userName)
     {
-        return await dbContext.UserBooks
-            .Include(book => book.User)
-            .Where(book => book.User.UserName == userName)
-            .Select(book => new BookDto(
-                book.Id,
-                book.Title,
-                book.Author,
-                book.Description,
-                book.CoverUrl,
-                book.PublishedDate,
-                book.PageCount,
-                book.Rating
-            ))
+        var userBooks = await dbContext.UserBooks
+            .Include(ub => ub.Book)
+            .Include(ub => ub.User)
+            .Where(ub => ub.User.UserName == userName)
             .ToListAsync();
+
+        return userBooks.Select(ub => MapBookToDto(ub.Book)).ToList();
     }
 
     public async Task<IReadOnlyList<BookSearchResultDto>> QueryBooks(string query)
     {
         try
         {
-            var response = await httpClient.GetAsync($"search.json?q={Uri.EscapeDataString(query)}&limit=3");
+            var url = $"books/{Uri.EscapeDataString(query)}?column=title&pageSize=20";
+            var response = await httpClient.GetAsync(url);
             response.EnsureSuccessStatusCode();
 
             var json = await response.Content.ReadAsStringAsync();
-            var jsonObject = JObject.Parse(json);
+            var searchResponse = JsonSerializer.Deserialize<IsbndbSearchResponse>(json, new JsonSerializerOptions
+            {
+                PropertyNameCaseInsensitive = true
+            });
 
-            var topBooks = jsonObject.SelectToken("docs")
-                ?.Select(book =>
+            if (searchResponse?.Books == null)
+                return Array.Empty<BookSearchResultDto>();
+            
+            var seen = new HashSet<string>();
+            var results = new List<BookSearchResultDto>();
+
+            foreach (var book in searchResponse.Books)
+            {
+                if (string.IsNullOrEmpty(book.Title) || 
+                    (string.IsNullOrEmpty(book.Isbn13) && 
+                     string.IsNullOrEmpty(book.Isbn10) && 
+                     string.IsNullOrEmpty(book.Isbn)))
                 {
-                    var workKey = book["key"]?.ToString();
-                    var workId = workKey?.Split('/').Last();
-                    var title = book["title"]?.ToString();
-                    var authorName = book["author_name"]?[0]?.ToString();
-                    var coverId = book["cover_i"]?.ToString();
-                    
-                    if (string.IsNullOrEmpty(workId) || string.IsNullOrEmpty(title))
-                        return null;
+                    continue;
+                }
+                
+                var key = $"{book.Title}-{book.Authors?.FirstOrDefault()}";
+                if (seen.Contains(key))
+                    continue;
 
-                    var coverUrl = !string.IsNullOrEmpty(coverId) 
-                        ? $"https://covers.openlibrary.org/b/id/{coverId}-L.jpg"
-                        : null;
+                seen.Add(key);
+                results.Add(new BookSearchResultDto(
+                    book.Isbn13,
+                    book.Isbn10,
+                    book.Isbn,
+                    book.Title,
+                    book.Authors?.FirstOrDefault(),
+                    book.Image
+                ));
+            }
 
-                    return new BookSearchResultDto(
-                        workId,
-                        title,
-                        authorName,
-                        coverUrl);
-                })
-                .Where(book => book != null)
-                .ToList();
-
-            return topBooks;
+            return results;
         }
         catch (HttpRequestException ex)
         {
             throw new Exception($"Failed to query books: {ex.Message}", ex);
         }
-        catch (JsonException ex)
-        {
-            throw new Exception($"Failed to parse book data: {ex.Message}", ex);
-        }
     }
 
-    public async Task<BookDto> GetBookById(string id)
+    public async Task<BookDto> GetBookById(int id)
     {
-        try
-        {
-            var response = await httpClient.GetAsync($"works/{id}.json");
-            response.EnsureSuccessStatusCode();
-            
-            var json = await response.Content.ReadAsStringAsync();
-            var jsonObject = JObject.Parse(json);
-            
-            var title = jsonObject["title"]?.ToString();
-            var description = ExtractDescription(jsonObject["description"]);
-            
-            var authorKey = jsonObject["authors"]?[0]?["author"]?["key"]?.ToString();
-            var authorName = "Unknown Author";
-            
-            if (!string.IsNullOrEmpty(authorKey))
-            {
-                var authorResponse = await httpClient.GetAsync($"{authorKey}.json");
-                if (authorResponse.IsSuccessStatusCode)
-                {
-                    var authorJson = await authorResponse.Content.ReadAsStringAsync();
-                    var authorObject = JObject.Parse(authorJson);
-                    authorName = authorObject["name"]?.ToString() ?? authorName;
-                }
-            }
-            
-            var coverIds = jsonObject["covers"];
-            var coverUrl = coverIds?.FirstOrDefault()?.ToString();
-            var imageUrl = !string.IsNullOrEmpty(coverUrl) 
-                ? $"https://covers.openlibrary.org/b/id/{coverUrl}-L.jpg"
-                : null;
-            
-            var editionsResponse = await httpClient.GetAsync($"works/{id}/editions.json?limit=10");
-            var pageCount = 0;
-            var publishedDate = "";
-
-            if (editionsResponse.IsSuccessStatusCode)
-            {
-                var editionsJson = await editionsResponse.Content.ReadAsStringAsync();
-                var editionsObject = JObject.Parse(editionsJson);
-                var entries = editionsObject["entries"];
-                
-                if (entries != null)
-                {
-                    foreach (var edition in entries)
-                    {
-                        var pages = edition["number_of_pages"]?.Value<int>();
-                        if (pages.HasValue && pages.Value > 0)
-                        {
-                            pageCount = pages.Value;
-                            publishedDate = edition["publish_date"]?.ToString() ?? "";
-                            break;
-                        }
-                    }
-                }
-            }
-            
-            if (string.IsNullOrEmpty(publishedDate))
-            {
-                var firstPublishYear = jsonObject["first_publish_date"]?.ToString();
-                publishedDate = firstPublishYear ?? "Unknown";
-            }
-
-            return new BookDto(
-                0,
-                title,
-                authorName,
-                description,
-                imageUrl,
-                publishedDate,
-                pageCount,
-                0
-            );
-        }
-        catch (HttpRequestException ex)
-        {
-            throw new Exception($"Failed to retrieve book with ID '{id}': {ex.Message}", ex);
-        }
-        catch (JsonException ex)
-        {
-            throw new Exception($"Failed to parse book data for ID '{id}': {ex.Message}", ex);
-        }
-    }
-    
-    public async Task<BookDto> CreateBook(
-        string userId,
-        string title,
-        string author,
-        string? description,
-        string? pageCount,
-        string? publishedDate,
-        int rating,
-        string? coverUrl,
-        IFormFile? coverFile
-    )
-    {
-        var finalCoverUrl = coverUrl ?? string.Empty;
-
-        if (coverFile != null && coverFile.Length > 0)
-        {
-            var allowedExtensions = new[] { ".jpg", ".jpeg", ".png", ".gif", ".webp" };
-            var extension = Path.GetExtension(coverFile.FileName).ToLowerInvariant();
-
-            if (!allowedExtensions.Contains(extension))
-                throw new ArgumentException("Invalid file type. Only images are allowed.");
-
-            if (coverFile.Length > 5 * 1024 * 1024)
-                throw new ArgumentException("File size must be less than 5MB");
-
-            using var memoryStream = new MemoryStream();
-            await coverFile.CopyToAsync(memoryStream);
-            var fileBytes = memoryStream.ToArray();
-            var base64String = Convert.ToBase64String(fileBytes);
-
-            finalCoverUrl = $"data:{coverFile.ContentType};base64,{base64String}";
-        }
-
-        int pages = 0;
-        if (!string.IsNullOrWhiteSpace(pageCount) && int.TryParse(pageCount, out var pc))
-            pages = pc;
-
-        var book = new UserBook
-        {
-            UserId = userId,
-            Title = title,
-            Author = author,
-            Description = description ?? string.Empty,
-            PageCount = pages,
-            PublishedDate = publishedDate ?? string.Empty,
-            Rating = rating,
-            CoverUrl = finalCoverUrl
-        };
-
-        dbContext.UserBooks.Add(book);
-        await dbContext.SaveChangesAsync();
-
-        return new BookDto(
-            book.Id,
-            book.Title,
-            book.Author,
-            book.Description,
-            book.CoverUrl,
-            book.PublishedDate,
-            book.PageCount,
-            book.Rating
-        );
-    }
-    
-    public async Task<BookDto> UpdateBook(
-        int id,
-        string title,
-        string author,
-        string? description,
-        string? pageCount,
-        string? publishedDate,
-        int rating,
-        string? coverUrl,
-        IFormFile? coverFile
-    )
-    {
-        var book = await dbContext.UserBooks.FindAsync(id);
+        var book = await dbContext.Books.FindAsync(id);
         if (book == null)
-            throw new ArgumentException("Book not found");
-
-        book.Title = title;
-        book.Author = author;
-        book.Description = description ?? string.Empty;
-        book.Rating = rating;
-        book.PublishedDate = publishedDate ?? string.Empty;
-
-        int pages = 0;
-        if (!string.IsNullOrWhiteSpace(pageCount) && int.TryParse(pageCount, out var pc))
-            pages = pc;
-        book.PageCount = pages;
-
-        if (coverFile != null && coverFile.Length > 0)
-        {
-            var allowedExtensions = new[] { ".jpg", ".jpeg", ".png", ".gif", ".webp" };
-            var extension = Path.GetExtension(coverFile.FileName).ToLowerInvariant();
-
-            if (!allowedExtensions.Contains(extension))
-                throw new ArgumentException("Invalid file type. Only images are allowed.");
-
-            if (coverFile.Length > 5 * 1024 * 1024)
-                throw new ArgumentException("File size must be less than 5MB");
-
-            using var memoryStream = new MemoryStream();
-            await coverFile.CopyToAsync(memoryStream);
-            var fileBytes = memoryStream.ToArray();
-            var base64String = Convert.ToBase64String(fileBytes);
-
-            book.CoverUrl = $"data:{coverFile.ContentType};base64,{base64String}";
-        }
-        else if (!string.IsNullOrEmpty(coverUrl))
-        {
-            book.CoverUrl = coverUrl;
-        }
-        else
-        {
-            book.CoverUrl = string.Empty;
-        }
-
-        await dbContext.SaveChangesAsync();
-
-        return new BookDto(
-            book.Id,
-            book.Title,
-            book.Author,
-            book.Description,
-            book.CoverUrl,
-            book.PublishedDate,
-            book.PageCount,
-            book.Rating
-        );
+            throw new Exception("Book not found");
+            
+        return MapBookToDto(book);
     }
 
-    private string ExtractDescription(JToken descriptionToken)
+    public async Task<BookDto> GetOrCreateBook(string? isbn13, string? isbn10, string? isbn)
     {
-        if (descriptionToken == null)
-            return null;
+        var book = await FindBookByIsbn(isbn13, isbn10, isbn);
         
-        if (descriptionToken.Type == JTokenType.String)
+        if (book != null)
+            return MapBookToDto(book);
+        
+        var isbndbBook = await FetchFromIsbndb(isbn13, isbn10, isbn);
+        if (isbndbBook == null)
+            throw new Exception("Book not found in ISBNdb");
+
+        book = await CreateBookFromIsbndb(isbndbBook);
+        return MapBookToDto(book);
+    }
+
+    public async Task<BookDto> AddBookToUser(string userId, string? isbn13, string? isbn10, string? isbn)
+    {
+        var bookDto = await GetOrCreateBook(isbn13, isbn10, isbn);
+        
+        var existingUserBook = await dbContext.UserBooks
+            .FirstOrDefaultAsync(ub => ub.UserId == userId && ub.BookId == bookDto.Id);
+
+        if (existingUserBook == null)
         {
-            return descriptionToken.ToString();
+            var userBook = new UserBook
+            {
+                UserId = userId,
+                BookId = bookDto.Id
+            };
+
+            dbContext.UserBooks.Add(userBook);
+            await dbContext.SaveChangesAsync();
         }
 
-        if (descriptionToken.Type == JTokenType.Object)
+        return bookDto;
+    }
+
+    public async Task RemoveBookFromUser(string userId, int bookId)
+    {
+        var userBook = await dbContext.UserBooks
+            .FirstOrDefaultAsync(ub => ub.UserId == userId && ub.BookId == bookId);
+
+        if (userBook != null)
         {
-            return descriptionToken["value"]?.ToString();
+            dbContext.UserBooks.Remove(userBook);
+            await dbContext.SaveChangesAsync();
+        }
+    }
+    
+    private async Task<Book?> FindBookByIsbn(string? isbn13, string? isbn10, string? isbn)
+    {
+        if (!string.IsNullOrEmpty(isbn13))
+        {
+            var book = await dbContext.Books.FirstOrDefaultAsync(b => b.Isbn13 == isbn13);
+            if (book != null) return book;
+        }
+
+        if (!string.IsNullOrEmpty(isbn10))
+        {
+            var book = await dbContext.Books.FirstOrDefaultAsync(b => b.Isbn10 == isbn10);
+            if (book != null) return book;
+        }
+
+        if (!string.IsNullOrEmpty(isbn))
+        {
+            var book = await dbContext.Books.FirstOrDefaultAsync(b => b.Isbn == isbn);
+            if (book != null) return book;
         }
 
         return null;
+    }
+
+    private async Task<IsbndbBook?> FetchFromIsbndb(string? isbn13, string? isbn10, string? isbn)
+    {
+        var isbnsToTry = new[] { isbn13, isbn10, isbn }.Where(i => !string.IsNullOrEmpty(i));
+
+        foreach (var isbnValue in isbnsToTry)
+        {
+            try
+            {
+                var url = $"book/{Uri.EscapeDataString(isbnValue!)}";
+                var response = await httpClient.GetAsync(url);
+                
+                if (response.IsSuccessStatusCode)
+                {
+                    var json = await response.Content.ReadAsStringAsync();
+                    var bookResponse = JsonSerializer.Deserialize<IsbndbBookResponse>(json, new JsonSerializerOptions
+                    {
+                        PropertyNameCaseInsensitive = true
+                    });
+                    return bookResponse?.Book;
+                }
+            }
+            catch
+            {
+                // ignored
+            }
+        }
+
+        return null;
+    }
+
+    private async Task<Book> CreateBookFromIsbndb(IsbndbBook isbndbBook)
+    {
+        var book = new Book
+        {
+            Isbn13 = isbndbBook.Isbn13,
+            Isbn10 = isbndbBook.Isbn10,
+            Isbn = isbndbBook.Isbn,
+            Title = isbndbBook.Title ?? "Unknown Title",
+            Author = isbndbBook.Authors?.FirstOrDefault(),
+            Synopsis = isbndbBook.Synopsis,
+            CoverImage = isbndbBook.Image,
+            DatePublished = isbndbBook.Date_Published,
+            PageCount = isbndbBook.Pages
+        };
+        
+        if (isbndbBook.Dimensions_Structured != null)
+        {
+            book.HeightInches = ConvertToInches(
+                isbndbBook.Dimensions_Structured.Height?.Value, 
+                isbndbBook.Dimensions_Structured.Height?.Unit
+            );
+            book.WidthInches = ConvertToInches(
+                isbndbBook.Dimensions_Structured.Width?.Value, 
+                isbndbBook.Dimensions_Structured.Width?.Unit
+            );
+            book.LengthInches = ConvertToInches(
+                isbndbBook.Dimensions_Structured.Length?.Value, 
+                isbndbBook.Dimensions_Structured.Length?.Unit
+            );
+        }
+
+        dbContext.Books.Add(book);
+        await dbContext.SaveChangesAsync();
+
+        return book;
+    }
+
+    private static decimal? ConvertToInches(decimal? value, string? unit)
+    {
+        if (!value.HasValue || string.IsNullOrEmpty(unit))
+            return null;
+
+        return unit.ToLower() switch
+        {
+            "mm" => value.Value / 25.4m,
+            "cm" => value.Value / 2.54m,
+            "inches" or "in" => value.Value,
+            _ => null
+        };
+    }
+
+    private static BookDto MapBookToDto(Book book)
+    {
+        return new BookDto(
+            book.Id,
+            book.Isbn13,
+            book.Isbn10,
+            book.Isbn,
+            book.Title,
+            book.Author,
+            book.Synopsis,
+            book.CoverImage,
+            book.DatePublished,
+            book.PageCount,
+            book.HeightInches,
+            book.WidthInches,
+            book.LengthInches
+        );
     }
 }
