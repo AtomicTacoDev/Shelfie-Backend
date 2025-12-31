@@ -23,6 +23,7 @@ public class BooksService(ApplicationDbContext dbContext, HttpClient httpClient)
             ub.Book.Title,
             ub.Book.Author,
             ub.Book.CoverImage,
+            ub.Book.PageCount,
             ub.Book.Isbn13,
             ub.Book.Isbn10,
             ub.Book.Isbn
