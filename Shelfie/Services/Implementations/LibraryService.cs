@@ -190,23 +190,23 @@ public class LibraryService(ApplicationDbContext dbContext, IBooksService booksS
 
     public async Task<BookshelfDataDto> UpdateBookshelfData(string userName, int bookshelfId, BookshelfDataDto data)
     {
-        // Get the user to validate ownership
         var library = await GetLibrary(userName);
         if (library == null)
             throw new InvalidOperationException("Library not found");
-
-        // Verify the bookshelf belongs to this user
+        
         var bookshelf = library.Objects.FirstOrDefault(o => o.Id == bookshelfId);
         if (bookshelf == null)
             throw new InvalidOperationException("Bookshelf not found");
-
-        // Get all UserBookIds that belong to this user for validation
+        
         var userBookIds = await dbContext.UserBooks
             .Where(ub => ub.UserId == library.UserId)
             .Select(ub => ub.Id)
             .ToListAsync();
-
-        // Validate that all books being added belong to the user
+        
+        Console.WriteLine("#######################################################");
+        Console.WriteLine(userBookIds.Aggregate("", (current, id) => current + (id + ",")));
+        Console.WriteLine("#######################################################");
+        
         var invalidBooks = data.Shelves
             .SelectMany(s => s.Books)
             .Where(b => !userBookIds.Contains(b.UserBookId))
@@ -219,16 +219,14 @@ public class LibraryService(ApplicationDbContext dbContext, IBooksService booksS
                 "These books don't belong to this user."
             );
         }
-
-        // Remove existing books
+        
         var existingBooks = await dbContext.BookshelfBooks
             .Where(book => book.PlacedObjectId == bookshelfId)
             .ToListAsync();
         
         dbContext.BookshelfBooks.RemoveRange(existingBooks);
-        await dbContext.SaveChangesAsync(); // Save the deletion first
+        await dbContext.SaveChangesAsync();
         
-        // Add new books
         foreach (var shelf in data.Shelves)
         {
             foreach (var book in shelf.Books)

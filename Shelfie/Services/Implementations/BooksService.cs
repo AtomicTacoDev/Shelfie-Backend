@@ -9,7 +9,7 @@ namespace Shelfie.Services;
 
 public class BooksService(ApplicationDbContext dbContext, HttpClient httpClient) : IBooksService
 {
-    public async Task<IReadOnlyList<BookDto>> GetBooksByUserName(string userName)
+    public async Task<IReadOnlyList<UserBookDto>> GetBooksByUserName(string userName)
     {
         var userBooks = await dbContext.UserBooks
             .Include(ub => ub.Book)
@@ -17,7 +17,16 @@ public class BooksService(ApplicationDbContext dbContext, HttpClient httpClient)
             .Where(ub => ub.User.UserName == userName)
             .ToListAsync();
 
-        return userBooks.Select(ub => MapBookToDto(ub.Book)).ToList();
+        return userBooks.Select(ub => new UserBookDto(
+            ub.Id,
+            ub.BookId,
+            ub.Book.Title,
+            ub.Book.Author,
+            ub.Book.CoverImage,
+            ub.Book.Isbn13,
+            ub.Book.Isbn10,
+            ub.Book.Isbn
+        )).ToList();
     }
 
     public async Task<IReadOnlyList<BookSearchResultDto>> QueryBooks(string query)

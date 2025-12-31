@@ -19,7 +19,7 @@ public record AddBookRequest
 public class UserBooksController(IBooksService booksService, IAuthService authService) : ControllerBase
 {
     [HttpGet("{userName}")]
-    public async Task<ActionResult<IReadOnlyCollection<BookDto>>> GetUserBooks(string userName)
+    public async Task<ActionResult<IReadOnlyCollection<UserBookDto>>> GetUserBooks(string userName)
     {
         var user = await authService.GetUserByName(userName);
         if (user == null || string.IsNullOrEmpty(user.UserName))

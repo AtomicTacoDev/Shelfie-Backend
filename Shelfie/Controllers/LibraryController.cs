@@ -106,6 +106,8 @@ public partial class LibraryController(
     [HttpPut("{userName}/objects/bookshelf/{bookshelfId}")]
     public async Task<ActionResult<BookshelfDataDto>> UpdateBookshelfData(string userName, int bookshelfId, [FromBody] BookshelfDataDto data)
     {
+        Console.WriteLine(data);
+        
         try
         {
             var updatedData = await libraryService.UpdateBookshelfData(userName, bookshelfId, data);
