@@ -131,7 +131,7 @@ public class BooksService(ApplicationDbContext dbContext, HttpClient httpClient)
     public async Task RemoveBookFromUser(string userId, int bookId)
     {
         var userBook = await dbContext.UserBooks
-            .FirstOrDefaultAsync(ub => ub.UserId == userId && ub.BookId == bookId);
+            .FirstOrDefaultAsync(ub => ub.UserId == userId && ub.Id == bookId);
 
         if (userBook != null)
         {
