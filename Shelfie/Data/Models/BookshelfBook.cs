@@ -22,9 +22,6 @@ public class BookshelfBook
     [Required]
     public int Index { get; set; }
     
-    [Required]
-    public string Color { get; set; }
-    
     [ForeignKey(nameof(PlacedObjectId))]
     public PlacedObject PlacedObject { get; set; }
     

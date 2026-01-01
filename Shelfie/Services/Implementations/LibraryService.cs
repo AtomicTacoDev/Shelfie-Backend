@@ -178,7 +178,6 @@ public class LibraryService(ApplicationDbContext dbContext, IBooksService booksS
                         bb.UserBookId,
                         book.Title,
                         book.Author,
-                        bb.Color,
                         bb.Index
                     );
                 }).ToList()
@@ -202,10 +201,6 @@ public class LibraryService(ApplicationDbContext dbContext, IBooksService booksS
             .Where(ub => ub.UserId == library.UserId)
             .Select(ub => ub.Id)
             .ToListAsync();
-        
-        Console.WriteLine("#######################################################");
-        Console.WriteLine(userBookIds.Aggregate("", (current, id) => current + (id + ",")));
-        Console.WriteLine("#######################################################");
         
         var invalidBooks = data.Shelves
             .SelectMany(s => s.Books)
@@ -236,8 +231,7 @@ public class LibraryService(ApplicationDbContext dbContext, IBooksService booksS
                     PlacedObjectId = bookshelfId,
                     UserBookId = book.UserBookId,
                     ShelfId = shelf.Id,
-                    Index = book.Index,
-                    Color = book.Color
+                    Index = book.Index
                 };
                 dbContext.BookshelfBooks.Add(bookshelfBook);
             }

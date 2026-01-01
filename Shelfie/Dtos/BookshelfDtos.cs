@@ -6,7 +6,6 @@ public record BookshelfBookDto(
     int UserBookId,
     string Title,
     string Author,
-    string Color,
     int Index
 );
 
