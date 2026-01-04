@@ -7,6 +7,7 @@ using Microsoft.EntityFrameworkCore;
 using Shelfie.Data;
 using Shelfie.Models;
 using Shelfie.Services;
+using Resend;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -30,10 +31,7 @@ builder.Services.AddScoped<IAuthService, AuthService>();
 builder.Services.AddScoped<ILibraryService, LibraryService>();
 builder.Services.AddScoped<IBooksService, BooksService>();
 
-// Add services to the container.
-
 builder.Services.AddControllers().AddNewtonsoftJson();
-// Learn more about configuring Swagger/OpenAPI at https://aka.ms/aspnetcore/swashbuckle
 builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen();
 
@@ -43,10 +41,10 @@ builder.Services.AddCors(options =>
         policy =>
         {
             policy.WithOrigins(
-				"http://localhost:3000",
-				"https://shelfie3d.com",
-				"https://www.shelfie3d.com"
-				)
+                "http://localhost:3000",
+                "https://shelfie3d.com",
+                "https://www.shelfie3d.com"
+                )
                 .AllowAnyHeader()
                 .AllowAnyMethod()
                 .AllowCredentials();
@@ -95,9 +93,25 @@ builder.Services.AddHttpClient<IBooksService, BooksService>(client =>
     client.DefaultRequestHeaders.Add("User-Agent", "Shelfie/shelfie3d.com (atomictacodev@gmail.com)");
 });
 
+var resendApiKey = Environment.GetEnvironmentVariable("RESEND_API_KEY")
+                   ?? builder.Configuration["Resend:ApiKey"];
+
+if (string.IsNullOrEmpty(resendApiKey))
+{
+    throw new InvalidOperationException("Resend API key is not configured. Set RESEND_API_KEY environment variable or add it to appsettings.json");
+}
+
+builder.Services.AddOptions();
+builder.Services.AddHttpClient<ResendClient>();
+builder.Services.Configure<ResendClientOptions>(o =>
+{
+    o.ApiToken = resendApiKey;
+});
+builder.Services.AddTransient<IResend, ResendClient>();
+builder.Services.AddScoped<IEmailService, ResendEmailService>();
+
 var app = builder.Build();
 
-// Configure the HTTP request pipeline.
 if (app.Environment.IsDevelopment())
 {
     app.UseSwagger();

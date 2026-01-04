@@ -77,6 +77,153 @@ public class AuthService(IConfiguration config, UserManager<User> userManager, A
 
         return refreshToken;
     }
+    
+    public async Task<SignupResponseDto> CreatePendingSignup(string email, string username, string password)
+    {
+        var existingUser = await userManager.FindByEmailAsync(email);
+        if (existingUser != null)
+            return new SignupResponseDto(false, "Email already registered.", null, null);
+        
+        var existingUsername = await userManager.FindByNameAsync(username);
+        if (existingUsername != null)
+            return new SignupResponseDto(false, "Username already taken.", null, null);
+        
+        var existingPending = await dbContext.PendingSignups
+            .FirstOrDefaultAsync(p => p.Email == email && !p.IsConfirmed && p.ExpiresAt > DateTime.UtcNow);
+        
+        if (existingPending != null)
+        {
+            dbContext.PendingSignups.Remove(existingPending);
+        }
+        
+        var passwordHasher = new PasswordHasher<User>();
+        var passwordHash = passwordHasher.HashPassword(null!, password);
+        
+        var randomBytes = RandomNumberGenerator.GetBytes(32);
+        var confirmationToken = Convert.ToBase64String(randomBytes)
+            .Replace('+', '-')
+            .Replace('/', '_')
+            .TrimEnd('=');
+        
+        var pendingSignup = new PendingSignup
+        {
+            Email = email,
+            Username = username,
+            PasswordHash = passwordHash,
+            ConfirmationToken = confirmationToken,
+            CreatedAt = DateTime.UtcNow,
+            ExpiresAt = DateTime.UtcNow.AddHours(24),
+            IsConfirmed = false
+        };
+        
+        dbContext.PendingSignups.Add(pendingSignup);
+        await dbContext.SaveChangesAsync();
+        
+        return new SignupResponseDto(true, null, confirmationToken, username);
+    }
+
+    public async Task<SignupResponseDto> ResendConfirmationEmail(string email)
+    {
+        var pendingSignup = await dbContext.PendingSignups
+            .FirstOrDefaultAsync(p => p.Email == email && !p.IsConfirmed && p.ExpiresAt > DateTime.UtcNow);
+        
+        if (pendingSignup == null)
+        {
+            return new SignupResponseDto(false, "No pending signup found for this email.", null, null);
+        }
+        
+        var randomBytes = RandomNumberGenerator.GetBytes(32);
+        var newConfirmationToken = Convert.ToBase64String(randomBytes)
+            .Replace('+', '-')
+            .Replace('/', '_')
+            .TrimEnd('=');
+        
+        pendingSignup.ConfirmationToken = newConfirmationToken;
+        pendingSignup.ExpiresAt = DateTime.UtcNow.AddHours(24);
+        
+        await dbContext.SaveChangesAsync();
+        
+        return new SignupResponseDto(true, null, newConfirmationToken, pendingSignup.Username);
+    }
+
+    public async Task<AuthResponseDto?> ConfirmEmailAndCreateUser(string confirmationToken)
+    {
+        var pendingSignup = await dbContext.PendingSignups
+            .FirstOrDefaultAsync(p => p.ConfirmationToken == confirmationToken 
+                                      && !p.IsConfirmed 
+                                      && p.ExpiresAt > DateTime.UtcNow);
+        
+        if (pendingSignup == null)
+            return null;
+        
+        var user = new User
+        {
+            Email = pendingSignup.Email,
+            UserName = pendingSignup.Username,
+            EmailConfirmed = true,
+            PasswordHash = pendingSignup.PasswordHash
+        };
+        
+        var createResult = await userManager.CreateAsync(user);
+        if (!createResult.Succeeded)
+            return null;
+        
+        dbContext.Libraries.Add(new Library
+        {
+            UserId = user.Id,
+            Objects = new List<PlacedObject>()
+        });
+        
+        var jwt = await GenerateJwt(user.Email);
+        var refreshToken = GenerateRefreshToken();
+        
+        dbContext.RefreshTokens.Add(new RefreshToken
+        {
+            UserId = user.Id,
+            Token = refreshToken,
+            CreatedAt = DateTime.UtcNow,
+            ExpiresAt = DateTime.UtcNow.AddDays(int.Parse(config["Jwt:RefreshTokenExpiryDays"]!)),
+            IsRevoked = false
+        });
+        
+        pendingSignup.IsConfirmed = true;
+        
+        await dbContext.SaveChangesAsync();
+        
+        return new AuthResponseDto(jwt, refreshToken);
+    }
+    
+    public async Task<AuthResponseDto?> Login(string email, string password)
+    {
+        var user = await userManager.FindByEmailAsync(email);
+        
+        if (user == null)
+            return null;
+        
+        var passwordValid = await userManager.CheckPasswordAsync(user, password);
+        
+        if (!passwordValid)
+            return null;
+        
+        if (string.IsNullOrEmpty(user.UserName))
+            return null;
+        
+        var jwt = await GenerateJwt(user.Email);
+        var refreshToken = GenerateRefreshToken();
+        
+        dbContext.RefreshTokens.Add(new RefreshToken
+        {
+            UserId = user.Id,
+            Token = refreshToken,
+            CreatedAt = DateTime.UtcNow,
+            ExpiresAt = DateTime.UtcNow.AddDays(int.Parse(config["Jwt:RefreshTokenExpiryDays"]!)),
+            IsRevoked = false
+        });
+        
+        await dbContext.SaveChangesAsync();
+        
+        return new AuthResponseDto(jwt, refreshToken);
+    }
 
     public async Task<AuthResponseDto?> GoogleLogin(string authCode)
     {

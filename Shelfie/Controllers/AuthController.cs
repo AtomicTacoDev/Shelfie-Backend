@@ -1,21 +1,25 @@
 using System.Globalization;
+using System.IdentityModel.Tokens.Jwt;
 using System.Security.Claims;
 using System.Text.RegularExpressions;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
-using Microsoft.IdentityModel.JsonWebTokens;
 using Shelfie.Models.Dto;
 using Shelfie.Services;
+using JwtRegisteredClaimNames = System.IdentityModel.Tokens.Jwt.JwtRegisteredClaimNames;
 
 namespace Shelfie.Controllers;
 
 [ApiController]
 [Route("[controller]")]
-public partial class AuthController(IAuthService authService) : ControllerBase
+public partial class AuthController(IAuthService authService, IEmailService emailService) : ControllerBase
 {
     public record GoogleLoginRequest(string AuthCode);
     public record RegisterRequest(string Username);
-    public record SignUpRequest(string Email, string Password);
+    public record SignUpRequest(string Email, string Username, string Password);
+    public record ConfirmEmailRequest(string Token);
+    public record LoginRequest(string Email, string Password);
+    public record ResendConfirmationRequest(string Email);
     
     [GeneratedRegex("^[a-zA-Z0-9]+$")]
     private static partial Regex UsernameRegex();
@@ -77,6 +81,30 @@ public partial class AuthController(IAuthService authService) : ControllerBase
         return Ok();
     }
     
+    [HttpPost("login")]
+    public async Task<ActionResult<AuthResponseDto>> Login([FromBody] LoginRequest request)
+    {
+        if (string.IsNullOrWhiteSpace(request.Email))
+            return BadRequest("Email must be provided.");
+    
+        if (string.IsNullOrWhiteSpace(request.Password))
+            return BadRequest("Password must be provided.");
+
+        var tokens = await authService.Login(request.Email, request.Password);
+        
+        if (tokens == null)
+            return Unauthorized("Invalid email or password.");
+        
+        Response.Cookies.Append("refreshToken", tokens.RefreshToken, new CookieOptions
+        {
+            HttpOnly = true,
+            Secure = true,
+            SameSite = SameSiteMode.Strict,
+        });
+
+        return Ok(tokens);
+    }
+    
     [HttpPost("googleLogin")]
     public async Task<ActionResult<AuthResponseDto>> GoogleLogin([FromBody] GoogleLoginRequest request)
     {
@@ -105,14 +133,80 @@ public partial class AuthController(IAuthService authService) : ControllerBase
     {
         if (string.IsNullOrWhiteSpace(request.Email))
             return BadRequest("Email must be provided.");
-        
+    
         if (string.IsNullOrWhiteSpace(request.Password))
             return BadRequest("Password must be provided.");
-        
+    
+        if (string.IsNullOrWhiteSpace(request.Username))
+            return BadRequest("Username must be provided.");
+    
         if (!IsValidEmail(request.Email))
             return BadRequest("Invalid email address.");
+    
+        var username = request.Username.Trim();
+    
+        if (username.Length is < 3 or > 20)
+            return BadRequest("Username must be between 3 and 20 characters.");
 
-        throw new NotImplementedException();
+        if (!UsernameRegex().IsMatch(username))
+            return BadRequest("Username can only contain letters and numbers.");
+
+        var result = await authService.CreatePendingSignup(request.Email, request.Username, request.Password);
+    
+        if (!result.Success)
+            return BadRequest(result.Message);
+        
+        var emailResult = await emailService.SendEmailConfirmationAsync(
+            request.Email, 
+            request.Username, 
+            result.ConfirmationToken!);
+    
+        return Ok(new { message = "Please check your email to confirm your account." });
+    }
+    
+    [HttpPost("confirm-email")]
+    public async Task<ActionResult> ConfirmEmail([FromBody] ConfirmEmailRequest request)
+    {
+        var result = await authService.ConfirmEmailAndCreateUser(request.Token);
+    
+        if (result == null)
+            return BadRequest("Invalid or expired confirmation token.");
+        
+        var handler = new JwtSecurityTokenHandler();
+        var jwtToken = handler.ReadJwtToken(result.Jwt);
+        var email = jwtToken.Claims.FirstOrDefault(c => c.Type == JwtRegisteredClaimNames.Email)?.Value;
+        var username = jwtToken.Claims.FirstOrDefault(c => c.Type == ClaimTypes.Name)?.Value;
+        
+        if (!string.IsNullOrEmpty(email) && !string.IsNullOrEmpty(username))
+        {
+            _ = emailService.SendWelcomeEmailAsync(email, username);
+        }
+    
+        return Ok(new { message = "Email confirmed successfully. Please log in." });
+    }
+    
+    [HttpPost("resend-confirmation")]
+    public async Task<ActionResult> ResendConfirmation([FromBody] ResendConfirmationRequest request)
+    {
+        if (string.IsNullOrWhiteSpace(request.Email))
+            return BadRequest("Email must be provided.");
+        
+        var result = await authService.ResendConfirmationEmail(request.Email);
+        
+        if (!result.Success)
+            return BadRequest(result.Message);
+        
+        var emailResult = await emailService.SendEmailConfirmationAsync(
+            request.Email,
+            result.Username!,
+            result.ConfirmationToken!);
+        
+        if (!emailResult.Success)
+        {
+            return StatusCode(500, "Failed to send confirmation email. Please try again later.");
+        }
+        
+        return Ok(new { message = "Confirmation email has been resent. Please check your inbox." });
     }
     
     [Authorize]
